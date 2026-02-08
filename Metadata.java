@@ -4,8 +4,10 @@ public class Metadata {
     public Double latitude;      // nullable
     public Double longitude;     // nullable
     public Double altitude;      // nullable
-    public String cameraMake;    // optional
-    public String cameraModel;   // optional
     public String sha256;        // computed hash
     public boolean gps_flag;     // whether data is available
+    public int width;
+    public int height;
+    public long filesize;
+    public String cloud_uri;
 }

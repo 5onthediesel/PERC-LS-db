@@ -15,12 +15,16 @@ class db {
         EXIFParser.ExifData d = EXIFParser.parse(f.getAbsolutePath());
 
         meta.filename = f.getName();
+        meta.filesize = f.length();
         meta.datetime = d.date;
         meta.latitude = d.lat;
-        meta.longitude = d.lon;
+        meta.longitude = -d.lon;
         meta.altitude = d.alt;
         meta.gps_flag = (d.lat != null && d.lon != null && d.alt != null);
         meta.sha256 = ImgHash.sha256(f);
+        meta.width = ImgDet.getWidth(f);
+        meta.height = ImgDet.getHeight(f);
+        meta.cloud_uri = "";
 
         return meta;
     }
@@ -28,24 +32,35 @@ class db {
     static void setupSchema(Connection conn) throws SQLException {
         Statement s = conn.createStatement();
         s.execute("set search_path to cs370");
-        // s.execute("drop table if exists images");
+        s.execute("drop table if exists images");
         s.execute("""
             create table if not exists images (
-                img_hash text unique,
+                id serial primary key,
+                img_hash varchar(64) unique,
+                cloud_uri text not null,
                 filename text,
+
+                filesize_bytes bigint,
+                width int,
+                height int,
+
                 gps_flag boolean,
                 latitude double precision,
                 longitude double precision,
                 altitude double precision,
-                datetime_taken timestamp
+                datetime_taken timestamptz,
+                datetime_uploaded timestamptz default now()
             )
         """);
     }
-
+    
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
         String sql =
-            "insert into images (img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken) " +
-            "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY:MM:DD HH24:MI:SS'))";
+            "insert into images (" +
+            "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
+            "cloud_uri, width, height, filesize_bytes) " +
+            "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY:MM:DD HH24:MI:SS'), " +
+            "?, ?, ?, ?)";
 
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setString(1, meta.sha256);
@@ -63,6 +78,10 @@ class db {
         }
 
         ps.setString(7, meta.datetime);
+        ps.setString(8, meta.cloud_uri);
+        ps.setInt(9, meta.width);
+        ps.setInt(10, meta.height);
+        ps.setLong(11, meta.filesize);
         ps.executeUpdate();
     }
 
@@ -94,14 +113,13 @@ class db {
                 File fileToProcess = ImgDet.convertToJpg(f);
                 jpgFiles.add(fileToProcess);
             } catch (Exception e) {
-                System.err.println("Failed to process file: " + f.getName());
                 e.printStackTrace();
             }
         }
         return jpgFiles;
     }
 
-// -----------------------------------------------------------------------------
+/* -------------------------------------------------------------------------- */
 
     public static void main(String[] args) throws Exception {
         File folder = new File("images");

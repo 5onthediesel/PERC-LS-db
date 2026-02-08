@@ -99,7 +99,7 @@ public class EXIFParser {
         bb.position(offset);
         int entries = bb.getShort() & 0xFFFF;
 
-        int latRef = 0, lonRef = 0;
+        char latRef = 0, lonRef = 0;
         int latOffset = 0, lonOffset = 0;
         int altRef = 0, altOffset = 0;
 
@@ -109,9 +109,9 @@ public class EXIFParser {
             int count = bb.getInt();
             int value = bb.getInt();
 
-            if (tag == 1) latRef = value;
+            // if (tag == 1) latRefChar = readAsciiChar(bb, value, count);
             if (tag == 2) latOffset = value;
-            if (tag == 3) lonRef = value;
+            // if (tag == 3) lonRefChar = readAsciiChar(bb, value, count);
             if (tag == 4) lonOffset = value;
             if (tag == 5) altRef = value;
             if (tag == 6) altOffset = value;
@@ -120,9 +120,6 @@ public class EXIFParser {
         if (latOffset > 0 && lonOffset > 0) {
             d.lat = readRationalTriplet(bb, tiffBase + latOffset);
             d.lon = readRationalTriplet(bb, tiffBase + lonOffset);
-
-            if (latRef == 'S') d.lat = -d.lat;
-            if (lonRef == 'W') d.lon = -d.lon;
         }
         if (altOffset > 0) {
             double alt = readRational(bb, tiffBase + altOffset);
@@ -150,4 +147,5 @@ public class EXIFParser {
         long den = bb.getInt() & 0xFFFFFFFFL;
         return (double) num / den;
     }
+
 }

@@ -31,6 +31,18 @@ public class ImgDet {
         return jpgFile;
     }
 
+    public static int getWidth(File f) throws IOException {
+        BufferedImage img = ImageIO.read(f);
+        if (img == null) throw new IOException("Not an image: " + f);
+        return img.getWidth();
+    }
+
+    public static int getHeight(File f) throws IOException {
+        BufferedImage img = ImageIO.read(f);
+        if (img == null) throw new IOException("Not an image: " + f);
+        return img.getHeight();
+    }
+
     public static String getExtension(String filename) {
         int dot = filename.lastIndexOf('.');
         return (dot == -1) ? "" : filename.substring(dot + 1);
