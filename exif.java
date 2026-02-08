@@ -6,7 +6,7 @@ public class exif {
 
     static class ExifData {
         String date;
-        Double lat, lon;
+        Double lat, lon, alt;
     }
 
     static int tiffBase;
@@ -16,6 +16,7 @@ public class exif {
         System.out.println("Date = " + d.date);
         System.out.println("Lat  = " + d.lat);
         System.out.println("Lon  = " + d.lon);
+        System.out.println("Lon  = " + d.alt);
     }
 
     public static ExifData parse(String file) throws Exception {
@@ -108,6 +109,7 @@ public class exif {
 
         int latRef = 0, lonRef = 0;
         int latOffset = 0, lonOffset = 0;
+        int altRef = 0, altOffset = 0;
 
         for (int i = 0; i < entries; i++) {
             int tag = bb.getShort() & 0xFFFF;
@@ -119,6 +121,8 @@ public class exif {
             if (tag == 2) latOffset = value;
             if (tag == 3) lonRef = value;
             if (tag == 4) lonOffset = value;
+            if (tag == 5) altRef = value;
+            if (tag == 6) altOffset = value;
         }
 
         if (latOffset > 0 && lonOffset > 0) {
@@ -127,6 +131,11 @@ public class exif {
 
             if (latRef == 'S') d.lat = -d.lat;
             if (lonRef == 'W') d.lon = -d.lon;
+        }
+        if (altOffset > 0) {
+            double alt = readRational(bb, tiffBase + altOffset);
+            if (altRef == 1) alt = -alt; // below sea level
+            d.alt = alt;
         }
     }
 
@@ -141,5 +150,12 @@ public class exif {
         }
 
         return v[0] + v[1] / 60.0 + v[2] / 3600.0;
+    }
+
+    static double readRational(ByteBuffer bb, int offset) {
+        bb.position(offset);
+        long num = bb.getInt() & 0xFFFFFFFFL;
+        long den = bb.getInt() & 0xFFFFFFFFL;
+        return (double) num / den;
     }
 }

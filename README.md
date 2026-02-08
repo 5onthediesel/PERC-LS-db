@@ -1,7 +1,6 @@
 # cs370db
 
-cd /Library/PostgreSQL/18/bin
-
+cd /Library/PostgreSQL/18/bin && 
 ./psql -U postgres -d postgres
 pw rubiks
 

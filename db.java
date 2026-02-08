@@ -5,55 +5,74 @@ import java.util.Date;
 
 class db {
 
-    public static void main(String args[]) throws IOException {
+    static Connection connect() throws SQLException {
+        String url = "jdbc:postgresql://localhost:5432/postgres";
+        return DriverManager.getConnection(url, "postgres", "rubiks");
+    }
 
-        File f = new File("temp.jpg");
+    static Metadata loadMetadata(File f) throws Exception {
         Metadata meta = new Metadata();
-        try {
-            exif.ExifData d = exif.parse(f.getAbsolutePath());
-            meta.filename = f.getName();
-            meta.datetime = d.date;
-            meta.latitude = d.lat;
-            meta.longitude = d.lon;
-            // meta.sha256 = HashUtil.sha256(f);
-        } catch (Exception e) {
-            e.printStackTrace();
-            System.out.println("Failed to parse EXIF for file: " + f.getName());
+        exif.ExifData d = exif.parse(f.getAbsolutePath());
+
+        meta.filename = f.getName();
+        meta.datetime = d.date;
+        meta.latitude = d.lat;
+        meta.longitude = d.lon;
+        meta.altitude = d.alt;
+        meta.gps_flag = (d.lat != null && d.lon != null && d.alt != null);
+        meta.sha256 = "someHashingAlgo";
+
+        return meta;
+    }
+
+    static void setupSchema(Connection conn) throws SQLException {
+        Statement s = conn.createStatement();
+        s.execute("set search_path to cs370");
+        s.execute("drop table if exists images");
+        s.execute("""
+            create table images (
+                img_hash char(64) unique,
+                filename text,
+                gps_flag boolean,
+                latitude double precision,
+                longitude double precision,
+                altitude double precision,
+                datetime_taken timestamp
+            )
+        """);
+    }
+
+    static void insertMeta(Connection conn, Metadata meta) throws SQLException {
+        String sql =
+            "insert into images (img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken) " +
+            "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY:MM:DD HH24:MI:SS'))";
+
+        PreparedStatement ps = conn.prepareStatement(sql);
+        ps.setString(1, meta.sha256);
+        ps.setString(2, meta.filename);
+        ps.setBoolean(3, meta.gps_flag);
+
+        if (meta.gps_flag) {
+            ps.setDouble(4, meta.latitude);
+            ps.setDouble(5, meta.longitude);
+            ps.setDouble(6, meta.altitude);
+        } else {
+            ps.setNull(4, Types.DOUBLE);
+            ps.setNull(5, Types.DOUBLE);
+            ps.setNull(6, Types.DOUBLE);
         }
 
-        String url;
-        Connection conn;
-        PreparedStatement pStatement;
-        int result;
-        ResultSet rs;
-        String queryString;
+        ps.setString(7, meta.datetime);
+        ps.executeUpdate();
+    }
 
-        try { Class.forName("org.postgresql.Driver"); }
-        catch (ClassNotFoundException e) { System.out.println("Failed to find the JDBC driver"); }
+    public static void main(String[] args) throws Exception {
+        File f = new File("temp.jpg");
+        Metadata meta = loadMetadata(f);
 
-        try {
-            url = "jdbc:postgresql://localhost:5432/postgres";
-            conn = DriverManager.getConnection(url, "postgres", "rubiks");
-
-            queryString = "set search_path to cs370";
-            pStatement = conn.prepareStatement(queryString);
-            result = pStatement.executeUpdate();
-
-            queryString = "drop table if exists images";
-            pStatement = conn.prepareStatement(queryString);
-            result = pStatement.executeUpdate();
-
-            queryString = "create table images (latitude char(40), longitude char(40), hash char(40), date char(40), time char(40))";
-            pStatement = conn.prepareStatement(queryString);
-            result = pStatement.executeUpdate();
-
-            queryString = "insert into images (latitude, longitude, date) values (?, ?, ?)";
-            pStatement = conn.prepareStatement(queryString);
-            pStatement.setString(1, meta.latitude.toString());
-            pStatement.setString(2, meta.longitude.toString());
-            pStatement.setString(3, meta.datetime);
-            result = pStatement.executeUpdate();
+        try (Connection conn = connect()) {
+            setupSchema(conn);
+            insertMeta(conn, meta);
         }
-        catch (SQLException se) { System.err.println("SQL Exception." + "<Message>: " + se.getMessage()); }
     }
 }
