@@ -11,14 +11,6 @@ public class EXIFParser {
 
     static int tiffBase;
 
-    public static void main(String[] args) throws Exception {
-        ExifData d = parse("temp.jpg");
-        System.out.println("Date = " + d.date);
-        System.out.println("Lat  = " + d.lat);
-        System.out.println("Lon  = " + d.lon);
-        System.out.println("Lon  = " + d.alt);
-    }
-
     public static ExifData parse(String file) throws Exception {
         RandomAccessFile raf = new RandomAccessFile(file, "r");
 

@@ -1,7 +1,7 @@
 import java.sql.*;
 import java.io.*;
 import java.io.File;
-import java.util.Date;
+import java.util.*;
 
 class db {
 
@@ -31,7 +31,7 @@ class db {
         s.execute("drop table if exists images");
         s.execute("""
             create table images (
-                img_hash char(64) unique,
+                img_hash char(64),
                 filename text,
                 gps_flag boolean,
                 latitude double precision,
@@ -66,13 +66,38 @@ class db {
         ps.executeUpdate();
     }
 
+    static List<File> prepareImages(File folder) {
+        List<File> jpgFiles = new ArrayList<>();
+
+        for (File f : folder.listFiles()) {
+            if (!f.isFile() || f.getName().startsWith(".")) continue;
+            try {
+                File fileToProcess = ImgDet.convertToJpg(f);
+                jpgFiles.add(fileToProcess);
+            } catch (Exception e) {
+                System.err.println("Failed to process file: " + f.getName());
+                e.printStackTrace();
+            }
+        }
+        return jpgFiles;
+    }
+
     public static void main(String[] args) throws Exception {
-        File f = new File("temp.jpg");
-        Metadata meta = loadMetadata(f);
+        File folder = new File("images");
+        List<File> jpgFiles = prepareImages(folder);
 
         try (Connection conn = connect()) {
             setupSchema(conn);
-            insertMeta(conn, meta);
+
+            for (File jpg : jpgFiles) {
+                try {
+                    Metadata meta = loadMetadata(jpg);
+                    insertMeta(conn, meta);
+                } catch (Exception e) {
+                    System.err.println("Failed to insert metadata for: " + jpg.getName());
+                    e.printStackTrace();
+                }
+            }
         }
     }
 }
