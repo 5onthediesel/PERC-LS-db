@@ -20,7 +20,7 @@ class db {
         meta.longitude = d.lon;
         meta.altitude = d.alt;
         meta.gps_flag = (d.lat != null && d.lon != null && d.alt != null);
-        meta.sha256 = "someHashingAlgo";
+        meta.sha256 = ImgHash.sha256(f);
 
         return meta;
     }
@@ -28,10 +28,10 @@ class db {
     static void setupSchema(Connection conn) throws SQLException {
         Statement s = conn.createStatement();
         s.execute("set search_path to cs370");
-        s.execute("drop table if exists images");
+        // s.execute("drop table if exists images");
         s.execute("""
-            create table images (
-                img_hash char(64),
+            create table if not exists images (
+                img_hash text unique,
                 filename text,
                 gps_flag boolean,
                 latitude double precision,
@@ -66,6 +66,25 @@ class db {
         ps.executeUpdate();
     }
 
+    static void shipImgs(Metadata meta, Connection conn, List<File> jpgFiles) throws Exception {
+        for (File jpg : jpgFiles) {
+            try {
+                meta = loadMetadata(jpg);
+                insertMeta(conn, meta);
+
+            } catch (SQLException e) {
+                if (e.getSQLState().equals("23505")) {
+                    System.out.println("Duplicate image skipped: " + (meta != null ? meta.filename : jpg.getName()));
+                } else {
+                    throw e;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
     static List<File> prepareImages(File folder) {
         List<File> jpgFiles = new ArrayList<>();
 
@@ -82,22 +101,16 @@ class db {
         return jpgFiles;
     }
 
+// -----------------------------------------------------------------------------
+
     public static void main(String[] args) throws Exception {
         File folder = new File("images");
-        List<File> jpgFiles = prepareImages(folder);
+        List<File> jpgs = prepareImages(folder);
+        Metadata meta = new Metadata();
 
         try (Connection conn = connect()) {
             setupSchema(conn);
-
-            for (File jpg : jpgFiles) {
-                try {
-                    Metadata meta = loadMetadata(jpg);
-                    insertMeta(conn, meta);
-                } catch (Exception e) {
-                    System.err.println("Failed to insert metadata for: " + jpg.getName());
-                    e.printStackTrace();
-                }
-            }
+            shipImgs(meta, conn, jpgs);
         }
     }
 }
