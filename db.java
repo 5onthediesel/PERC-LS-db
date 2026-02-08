@@ -12,7 +12,7 @@ class db {
 
     static Metadata loadMetadata(File f) throws Exception {
         Metadata meta = new Metadata();
-        exif.ExifData d = exif.parse(f.getAbsolutePath());
+        EXIFParser.ExifData d = EXIFParser.parse(f.getAbsolutePath());
 
         meta.filename = f.getName();
         meta.datetime = d.date;
