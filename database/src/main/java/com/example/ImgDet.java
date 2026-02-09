@@ -1,3 +1,5 @@
+package com.example;
+
 import java.io.*;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -6,17 +8,18 @@ public class ImgDet {
 
     public static File convertToJpg(File f) throws IOException, InterruptedException {
         String ext = getExtension(f.getName()).toLowerCase();
-        if (ext.equals("jpg") || ext.equals("jpeg")) return f;
+        if (ext.equals("jpg") || ext.equals("jpeg"))
+            return f;
 
         File jpgFile = new File(f.getParent(), removeExtension(f.getName()) + ".jpg");
 
         if (ext.equals("heic") || ext.equals("heif")) {
             ProcessBuilder pb = new ProcessBuilder(
-                "sips", "-s", "format", "jpeg", f.getAbsolutePath(), "--out", jpgFile.getAbsolutePath()
-            );
+                    "sips", "-s", "format", "jpeg", f.getAbsolutePath(), "--out", jpgFile.getAbsolutePath());
             Process p = pb.start();
             int exitCode = p.waitFor();
-            if (exitCode != 0) throw new IOException("sips failed " + f.getName());
+            if (exitCode != 0)
+                throw new IOException("sips failed " + f.getName());
 
             if (!f.delete()) {
                 System.err.println("Duplicate insertion HEIC" + f.getName());
@@ -24,7 +27,8 @@ public class ImgDet {
 
         } else {
             BufferedImage img = ImageIO.read(f);
-            if (img == null) throw new IOException("Unsupported image format: " + f.getAbsolutePath());
+            if (img == null)
+                throw new IOException("Unsupported image format: " + f.getAbsolutePath());
             ImageIO.write(img, "jpg", jpgFile);
         }
 
@@ -33,13 +37,15 @@ public class ImgDet {
 
     public static int getWidth(File f) throws IOException {
         BufferedImage img = ImageIO.read(f);
-        if (img == null) throw new IOException("Not an image: " + f);
+        if (img == null)
+            throw new IOException("Not an image: " + f);
         return img.getWidth();
     }
 
     public static int getHeight(File f) throws IOException {
         BufferedImage img = ImageIO.read(f);
-        if (img == null) throw new IOException("Not an image: " + f);
+        if (img == null)
+            throw new IOException("Not an image: " + f);
         return img.getHeight();
     }
 

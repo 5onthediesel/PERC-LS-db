@@ -1,3 +1,5 @@
+package com.example;
+
 import java.sql.*;
 import java.io.*;
 import java.io.File;
@@ -34,33 +36,32 @@ class db {
         s.execute("set search_path to cs370");
         s.execute("drop table if exists images");
         s.execute("""
-            create table if not exists images (
-                id serial primary key,
-                img_hash varchar(64) unique,
-                cloud_uri text not null,
+                    create table if not exists images (
+                        id serial primary key,
+                        img_hash varchar(64) unique,
+                        cloud_uri text not null,
 
-                filename text,
-                filesize_bytes bigint,
-                width int,
-                height int,
+                        filename text,
+                        filesize_bytes bigint,
+                        width int,
+                        height int,
 
-                gps_flag boolean,
-                latitude double precision,
-                longitude double precision,
-                altitude double precision,
-                datetime_taken timestamptz,
-                datetime_uploaded timestamptz default now()
-            )
-        """);
+                        gps_flag boolean,
+                        latitude double precision,
+                        longitude double precision,
+                        altitude double precision,
+                        datetime_taken timestamptz,
+                        datetime_uploaded timestamptz default now()
+                    )
+                """);
     }
 
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
-        String sql =
-            "insert into images (" +
-            "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
-            "cloud_uri, width, height, filesize_bytes) " +
-            "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY:MM:DD HH24:MI:SS'), " +
-            "?, ?, ?, ?)";
+        String sql = "insert into images (" +
+                "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
+                "cloud_uri, width, height, filesize_bytes) " +
+                "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY:MM:DD HH24:MI:SS'), " +
+                "?, ?, ?, ?)";
 
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setString(1, meta.sha256);
@@ -103,12 +104,12 @@ class db {
         }
     }
 
-
     static List<File> prepareImages(File folder) {
         List<File> jpgFiles = new ArrayList<>();
 
         for (File f : folder.listFiles()) {
-            if (!f.isFile() || f.getName().startsWith(".")) continue;
+            if (!f.isFile() || f.getName().startsWith("."))
+                continue;
             try {
                 File fileToProcess = ImgDet.convertToJpg(f);
                 jpgFiles.add(fileToProcess);
@@ -119,7 +120,7 @@ class db {
         return jpgFiles;
     }
 
-/* -------------------------------------------------------------------------- */
+    /* -------------------------------------------------------------------------- */
 
     public static void main(String[] args) throws Exception {
         File folder = new File("images");

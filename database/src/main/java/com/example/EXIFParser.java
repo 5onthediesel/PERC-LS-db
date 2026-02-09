@@ -1,3 +1,5 @@
+package com.example;
+
 import java.io.*;
 import java.nio.*;
 import java.util.*;
@@ -66,12 +68,16 @@ public class EXIFParser {
             int count = bb.getInt();
             int value = bb.getInt();
 
-            if (tag == 0x8769) exifOffset = value; // Exif SubIFD
-            if (tag == 0x8825) gpsOffset = value;  // GPS IFD
+            if (tag == 0x8769)
+                exifOffset = value; // Exif SubIFD
+            if (tag == 0x8825)
+                gpsOffset = value; // GPS IFD
         }
 
-        if (exifOffset > 0) parseExifIFD(bb, tiffBase + exifOffset, d);
-        if (gpsOffset > 0) parseGPSIFD(bb, tiffBase + gpsOffset, d);
+        if (exifOffset > 0)
+            parseExifIFD(bb, tiffBase + exifOffset, d);
+        if (gpsOffset > 0)
+            parseGPSIFD(bb, tiffBase + gpsOffset, d);
     }
 
     static void parseExifIFD(ByteBuffer bb, int offset, ExifData d) {
@@ -110,11 +116,15 @@ public class EXIFParser {
             int value = bb.getInt();
 
             // if (tag == 1) latRefChar = readAsciiChar(bb, value, count);
-            if (tag == 2) latOffset = value;
+            if (tag == 2)
+                latOffset = value;
             // if (tag == 3) lonRefChar = readAsciiChar(bb, value, count);
-            if (tag == 4) lonOffset = value;
-            if (tag == 5) altRef = value;
-            if (tag == 6) altOffset = value;
+            if (tag == 4)
+                lonOffset = value;
+            if (tag == 5)
+                altRef = value;
+            if (tag == 6)
+                altOffset = value;
         }
 
         if (latOffset > 0 && lonOffset > 0) {
@@ -123,7 +133,8 @@ public class EXIFParser {
         }
         if (altOffset > 0) {
             double alt = readRational(bb, tiffBase + altOffset);
-            if (altRef == 1) alt = -alt; // below sea level
+            if (altRef == 1)
+                alt = -alt; // below sea level
             d.alt = alt;
         }
     }

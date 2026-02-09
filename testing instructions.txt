@@ -1,0 +1,7 @@
+install gcloud cli
+
+run:
+gcloud auth login `ACCOUNT`
+gcloud config set project cs370perc
+mvn -e clean compile 
+mvn -e -DskipTests exec:java -Dexec.mainClass="com.example.App"
