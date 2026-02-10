@@ -13,8 +13,10 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-// mvn-Dtest=PipelineIntegrationTest test-Dsurefire.useFile=false
+// brew services start postgresql@14
+// mvn -Dtest=PipelineIntegrationTest test -Dsurefire.useFile=false
 // CLEANUP=1 mvn -Dtest=PipelineIntegrationTest test -Dsurefire.useFile=false
+
 public class PipelineIntegrationTest {
 
     private static final String PROJECT_ID = "cs370perc";
@@ -76,19 +78,24 @@ public class PipelineIntegrationTest {
 
                 System.out.println("[STEP 5] Connect to GCS...");
                 storage = StorageOptions.newBuilder().setProjectId(PROJECT_ID).build().getService();
-                storage.list(BUCKET_NAME, Storage.BlobListOption.pageSize(1));
+                var page = storage.list(BUCKET_NAME, Storage.BlobListOption.pageSize(1));
+                for (Blob blob : page.iterateAll()) {
+                    System.out.println("Blob: " + blob.getName());
+                }
                 System.out.println("[OK] GCS access ok.");
 
                 blobId = BlobId.of(BUCKET_NAME, objectName);
 
                 System.out.println("[STEP 6] Pre-clean (best-effort)...");
-                try {
+
+                if (rowExists(conn, meta.sha256)) {
                     deleteRow(conn, meta.sha256);
-                } catch (Exception ignored) {
+                    System.out.println("[OK] Deleted DB row for hash=" + meta.sha256);
                 }
-                try {
+
+                if (storage.get(blobId) != null) {
                     storage.delete(blobId);
-                } catch (Exception ignored) {
+                    System.out.println("[OK] Deleted GCS object: " + gsUri);
                 }
 
                 System.out.println("[STEP 7] Upload to GCS...");

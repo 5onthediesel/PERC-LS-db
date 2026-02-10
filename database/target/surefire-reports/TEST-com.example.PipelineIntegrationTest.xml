@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.example.PipelineIntegrationTest" time="1.812" tests="1" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.example.PipelineIntegrationTest" time="1.884" tests="1" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="25"/>
     <property name="sun.jnu.encoding" value="UTF-8"/>
@@ -13,7 +13,7 @@
     <property name="sun.java.launcher" value="SUN_STANDARD"/>
     <property name="user.country" value="US"/>
     <property name="sun.boot.library.path" value="/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home/lib"/>
-    <property name="sun.java.command" value="/Users/victorli/Documents/GitHub/cs370db/database/target/surefire/surefirebooter-20260209213711657_3.jar /Users/victorli/Documents/GitHub/cs370db/database/target/surefire 2026-02-09T21-37-11_623-jvmRun1 surefire-20260209213711657_1tmp surefire_0-20260209213711657_2tmp"/>
+    <property name="sun.java.command" value="/Users/victorli/Documents/GitHub/cs370db/database/target/surefire/surefirebooter-20260210132413698_3.jar /Users/victorli/Documents/GitHub/cs370db/database/target/surefire 2026-02-10T13-24-13_669-jvmRun1 surefire-20260210132413698_1tmp surefire_0-20260210132413698_2tmp"/>
     <property name="http.nonProxyHosts" value="127.0.0.1|192.168.0.0/16|*.192.168.0.0/16|10.0.0.0/8|*.10.0.0.0/8|172.16.0.0/12|*.172.16.0.0/12|172.29.0.0/16|*.172.29.0.0/16|localhost|*.localhost|local|*.local|crashlytics.com|*.crashlytics.com|&lt;local&gt;|*.&lt;local&gt;"/>
     <property name="jdk.debug" value="release"/>
     <property name="test" value="PipelineIntegrationTest"/>
@@ -32,7 +32,7 @@
     <property name="java.vm.specification.vendor" value="Oracle Corporation"/>
     <property name="java.specification.name" value="Java Platform API Specification"/>
     <property name="apple.awt.application.name" value="ForkedBooter"/>
-    <property name="surefire.real.class.path" value="/Users/victorli/Documents/GitHub/cs370db/database/target/surefire/surefirebooter-20260209213711657_3.jar"/>
+    <property name="surefire.real.class.path" value="/Users/victorli/Documents/GitHub/cs370db/database/target/surefire/surefirebooter-20260210132413698_3.jar"/>
     <property name="sun.management.compiler" value="HotSpot 64-Bit Tiered Compilers"/>
     <property name="ftp.nonProxyHosts" value="127.0.0.1|192.168.0.0/16|*.192.168.0.0/16|10.0.0.0/8|*.10.0.0.0/8|172.16.0.0/12|*.172.16.0.0/12|172.29.0.0/16|*.172.29.0.0/16|localhost|*.localhost|local|*.local|crashlytics.com|*.crashlytics.com|&lt;local&gt;|*.&lt;local&gt;"/>
     <property name="java.runtime.version" value="25.0.2"/>
@@ -62,13 +62,13 @@
     <property name="socksNonProxyHosts" value="127.0.0.1|192.168.0.0/16|*.192.168.0.0/16|10.0.0.0/8|*.10.0.0.0/8|172.16.0.0/12|*.172.16.0.0/12|172.29.0.0/16|*.172.29.0.0/16|localhost|*.localhost|local|*.local|crashlytics.com|*.crashlytics.com|&lt;local&gt;|*.&lt;local&gt;"/>
     <property name="java.class.version" value="69.0"/>
   </properties>
-  <testcase name="endToEnd_withSpecificHeic_copyInTestDir_uploadAsHashDotJpg_insertToDb_andVerify" classname="com.example.PipelineIntegrationTest" time="1.804">
+  <testcase name="endToEnd_withSpecificHeic_copyInTestDir_uploadAsHashDotJpg_insertToDb_andVerify" classname="com.example.PipelineIntegrationTest" time="1.877">
     <system-out><![CDATA[=== BEGIN PipelineIntegrationTest ===
 Project root (user.dir): /Users/victorli/Documents/GitHub/cs370db/database
 Original HEIC path: /Users/victorli/Documents/GitHub/cs370db/database/src/test/java/com/example/test_image.heic
-[STEP 1] Copy original -> temp: /Users/victorli/Documents/GitHub/cs370db/database/src/test/java/com/example/test_image_copy_58726921-77cd-4f6a-af1e-a0461de4d94a.heic
+[STEP 1] Copy original -> temp: /Users/victorli/Documents/GitHub/cs370db/database/src/test/java/com/example/test_image_copy_58622d11-8606-404d-a27d-752faa3fc960.heic
 [STEP 2] Convert HEIC copy -> JPG...
-Converted JPG: /Users/victorli/Documents/GitHub/cs370db/database/src/test/java/com/example/test_image_copy_58726921-77cd-4f6a-af1e-a0461de4d94a.jpg
+Converted JPG: /Users/victorli/Documents/GitHub/cs370db/database/src/test/java/com/example/test_image_copy_58622d11-8606-404d-a27d-752faa3fc960.jpg
 [STEP 3] Compute hash + metadata...
 sha256: d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4
 [INFO] Upload objectName: d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4.jpg
@@ -76,10 +76,13 @@ sha256: d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4
 [STEP 4] Connect to Postgres...
 [OK] Connected to Postgres.
 [STEP 5] Connect to GCS...
+Blob: d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4.jpg
 [OK] GCS access ok.
 [STEP 6] Pre-clean (best-effort)...
+[OK] Deleted DB row for hash=d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4
+[OK] Deleted GCS object: gs://cs370perc-bucket/d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4.jpg
 [STEP 7] Upload to GCS...
-File /Users/victorli/Documents/GitHub/cs370db/database/src/test/java/com/example/test_image_copy_58726921-77cd-4f6a-af1e-a0461de4d94a.jpg uploaded to bucket cs370perc-bucket as d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4.jpg
+File /Users/victorli/Documents/GitHub/cs370db/database/src/test/java/com/example/test_image_copy_58622d11-8606-404d-a27d-752faa3fc960.jpg uploaded to bucket cs370perc-bucket as d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4.jpg
 [OK] Uploaded to: gs://cs370perc-bucket/d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4.jpg
 [STEP 8] Verify object exists...
 [STEP 9] Insert into DB...
