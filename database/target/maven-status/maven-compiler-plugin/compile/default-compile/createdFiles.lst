@@ -1,7 +1,8 @@
-com/example/Metadata.class
-com/example/ImgHash.class
-com/example/App.class
 com/example/EXIFParser.class
+com/example/quicktest.class
 com/example/EXIFParser$ExifData.class
 com/example/db.class
+com/example/Metadata.class
+com/example/ImgHash.class
+com/example/GoogleCloudStorageAPI.class
 com/example/ImgDet.class

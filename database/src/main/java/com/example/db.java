@@ -8,8 +8,13 @@ import java.util.*;
 class db {
 
     static Connection connect() throws SQLException {
+        // String url = "jdbc:postgresql://localhost:5432/postgres";
+        // return DriverManager.getConnection(url, "postgres", "rubiks");
         String url = "jdbc:postgresql://localhost:5432/postgres";
-        return DriverManager.getConnection(url, "postgres", "rubiks");
+        String user = "victorli";
+        String pass = "rubix"; // or null
+        Connection conn = DriverManager.getConnection(url, user, pass);
+        return conn;
     }
 
     static Metadata loadMetadata(File f) throws Exception {
