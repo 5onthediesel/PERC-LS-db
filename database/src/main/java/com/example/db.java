@@ -19,46 +19,47 @@ class db {
         // BRIAN'S POSTGRES USER & PASS
         // String url = "jdbc:postgresql://localhost:5432/postgres";
         // return DriverManager.getConnection(url, "postgres", "rubiks");
-        
-        // VICTOR'S POSTGRES USER & PASS
-        // String url = "jdbc:postgresql://localhost:5432/postgres";
-        // String user = "victorli";
-        // String pass = "rubix"; 
 
+        // VICTOR'S POSTGRES USER & PASS
         String url = "jdbc:postgresql://localhost:5432/postgres";
-        String user = "postgres";
-        String pass = "postgres"; 
+        String user = "victorli";
+        String pass = "rubix";
+
+        // CARSON's POSTGRES USER & PASS
+        // String url = "jdbc:postgresql://localhost:5432/postgres";
+        // String user = "postgres";
+        // String pass = "postgres";
 
         Connection conn = DriverManager.getConnection(url, user, pass);
         return conn;
     }
 
-static Metadata loadMetadata(File f) throws Exception {
-    Metadata meta = new Metadata();
-    EXIFParser.ExifData d = EXIFParser.parse(f.getAbsolutePath());
+    static Metadata loadMetadata(File f) throws Exception {
+        Metadata meta = new Metadata();
+        EXIFParser.ExifData d = EXIFParser.parse(f.getAbsolutePath());
 
-    meta.filename = f.getName();
-    meta.filesize = f.length();
-    meta.datetime = d.date;
-    
-    // DEBUG (Print EXIF)
-    System.out.println("DEBUG " + f.getName() + ":");
-    System.out.println("  date: " + d.date);
-    System.out.println("  lat: " + d.lat);
-    System.out.println("  lon: " + d.lon);
-    System.out.println("  alt: " + d.alt);
+        meta.filename = f.getName();
+        meta.filesize = f.length();
+        meta.datetime = d.date;
 
-    if (d.lat != null && d.lon != null) {
-        meta.latitude = d.lat;
-        meta.longitude = -d.lon;
-        meta.altitude = (d.alt != null) ? d.alt * 3.280839895 : null;
-        meta.gps_flag = true;
-    } else {
-        meta.latitude = null;
-        meta.longitude = null;
-        meta.altitude = null;
-        meta.gps_flag = false;
-    }
+        // DEBUG (Print EXIF)
+        System.out.println("DEBUG " + f.getName() + ":");
+        System.out.println("  date: " + d.date);
+        System.out.println("  lat: " + d.lat);
+        System.out.println("  lon: " + d.lon);
+        System.out.println("  alt: " + d.alt);
+
+        if (d.lat != null && d.lon != null) {
+            meta.latitude = d.lat;
+            meta.longitude = -d.lon;
+            meta.altitude = (d.alt != null) ? d.alt * 3.280839895 : null;
+            meta.gps_flag = true;
+        } else {
+            meta.latitude = null;
+            meta.longitude = null;
+            meta.altitude = null;
+            meta.gps_flag = false;
+        }
 
         meta.sha256 = ImgHash.sha256(f);
         meta.width = ImgDet.getWidth(f);
@@ -126,7 +127,7 @@ static Metadata loadMetadata(File f) throws Exception {
     // Builds a Metadata object from a SQL ResultSet row
     private static Metadata buildMetadataFromResultSet(ResultSet rs) throws SQLException {
         Metadata meta = new Metadata();
-        
+
         meta.sha256 = rs.getString("img_hash");
         meta.cloud_uri = rs.getString("cloud_uri");
         meta.filename = rs.getString("filename");
@@ -134,18 +135,18 @@ static Metadata loadMetadata(File f) throws Exception {
         meta.width = rs.getInt("width");
         meta.height = rs.getInt("height");
         meta.gps_flag = rs.getBoolean("gps_flag");
-        
+
         Double lat = (Double) rs.getObject("latitude");
         Double lon = (Double) rs.getObject("longitude");
         Double alt = (Double) rs.getObject("altitude");
-        
+
         meta.latitude = lat;
         meta.longitude = lon;
         meta.altitude = alt;
-        
+
         Timestamp ts = rs.getTimestamp("datetime_taken");
         meta.datetime = (ts != null) ? ts.toString() : null;
-        
+
         return meta;
     }
 
@@ -153,35 +154,34 @@ static Metadata loadMetadata(File f) throws Exception {
     // Example: Metadata img = getImageByHash(conn, "a3f2b9c8d1e5...");
     static Metadata getImageByHash(Connection conn, String hash) throws SQLException {
         String sql = "SELECT * FROM cs370.images WHERE img_hash = ?";
-        
+
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, hash);
-            
+
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     return buildMetadataFromResultSet(rs);
                 }
-                return null;  
+                return null;
             }
         }
     }
 
-
     // Retrieve all images taken within a date range
     // Example: Get all November 2024 images
-    static List<Metadata> getImagesByDateRange(Connection conn, String startDate, String endDate) 
-        throws SQLException {
+    static List<Metadata> getImagesByDateRange(Connection conn, String startDate, String endDate)
+            throws SQLException {
         List<Metadata> results = new ArrayList<>();
-        
+
         String sql = "SELECT * FROM cs370.images " +
-                     "WHERE datetime_taken >= ?::date " +
-                     "AND datetime_taken < (?::date + interval '1 day') " +
-                     "ORDER BY datetime_taken DESC";
-        
+                "WHERE datetime_taken >= ?::date " +
+                "AND datetime_taken < (?::date + interval '1 day') " +
+                "ORDER BY datetime_taken DESC";
+
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, startDate);
             ps.setString(2, endDate);
-            
+
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     results.add(buildMetadataFromResultSet(rs));
@@ -193,35 +193,36 @@ static Metadata loadMetadata(File f) throws Exception {
 
     // Retrieve all images within a radius of a GPS coordinate
     // Example: Get all images within 5km of Paradise Valley Ranch
-    static List<Metadata> getImagesByLocation(Connection conn, double centerLat, double centerLon, 
+    static List<Metadata> getImagesByLocation(Connection conn, double centerLat, double centerLon,
             double radiusKm) throws SQLException {
         List<Metadata> results = new ArrayList<>();
-        
+
         // Haversine formula in SQL to calculate distance
-        // Formula: distance = 2 * R * asin(sqrt(sin²((lat2-lat1)/2) + cos(lat1)*cos(lat2)*sin²((lon2-lon1)/2)))
+        // Formula: distance = 2 * R * asin(sqrt(sin²((lat2-lat1)/2) +
+        // cos(lat1)*cos(lat2)*sin²((lon2-lon1)/2)))
         // Where R = Earth's radius in km (6371)
-        
+
         String sql = "SELECT * FROM ( " +
-                    "  SELECT *, " +
-                    "    (6371 * acos( " +
-                    "      cos(radians(?)) * cos(radians(latitude)) * " +
-                    "      cos(radians(longitude) - radians(?)) + " +
-                    "      sin(radians(?)) * sin(radians(latitude)) " +
-                    "    )) AS distance_km " +
-                    "  FROM cs370.images " +
-                    "  WHERE gps_flag = true " +
-                    "    AND latitude IS NOT NULL " +
-                    "    AND longitude IS NOT NULL " +
-                    ") AS subquery " +
-                    "WHERE distance_km <= ? " +
-                    "ORDER BY distance_km";
-                
+                "  SELECT *, " +
+                "    (6371 * acos( " +
+                "      cos(radians(?)) * cos(radians(latitude)) * " +
+                "      cos(radians(longitude) - radians(?)) + " +
+                "      sin(radians(?)) * sin(radians(latitude)) " +
+                "    )) AS distance_km " +
+                "  FROM cs370.images " +
+                "  WHERE gps_flag = true " +
+                "    AND latitude IS NOT NULL " +
+                "    AND longitude IS NOT NULL " +
+                ") AS subquery " +
+                "WHERE distance_km <= ? " +
+                "ORDER BY distance_km";
+
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setDouble(1, centerLat);
             ps.setDouble(2, centerLon);
             ps.setDouble(3, centerLat);
             ps.setDouble(4, radiusKm);
-            
+
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     results.add(buildMetadataFromResultSet(rs));
@@ -234,21 +235,21 @@ static Metadata loadMetadata(File f) throws Exception {
     // Retrieve the most recently uploaded images
     static List<Metadata> getRecentImages(Connection conn, int limit) throws SQLException {
         List<Metadata> results = new ArrayList<>();
-        
+
         String sql = "SELECT * FROM cs370.images " +
-                     "ORDER BY datetime_uploaded DESC " +
-                     "LIMIT ?";
-        
+                "ORDER BY datetime_uploaded DESC " +
+                "LIMIT ?";
+
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, limit);
-            
+
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     results.add(buildMetadataFromResultSet(rs));
                 }
             }
         }
-        
+
         return results;
     }
 
@@ -288,37 +289,37 @@ static Metadata loadMetadata(File f) throws Exception {
 
     /* -------------------------------------------------------------------------- */
 
-public static void main(String[] args) throws Exception {
-    File folder = new File("src/main/java/com/example/images");     
-    List<File> jpgs = prepareImages(folder);
-    Metadata meta = new Metadata();
+    public static void main(String[] args) throws Exception {
+        File folder = new File("src/main/java/com/example/images");
+        List<File> jpgs = prepareImages(folder);
+        Metadata meta = new Metadata();
 
-    try (Connection conn = connect()) {
-        setupSchema(conn);
-        shipImgs(meta, conn, jpgs);
-        
-        System.out.println("\n=== Testing Query Methods ===");
-        
-        // TEST: Get recent images
-        List<Metadata> recent = getRecentImages(conn, 3);
-        System.out.println("Recent images: " + recent.size());
-        for (Metadata m : recent) {
-            System.out.println("  - " + m.filename);
-        }
-        
-        // TEST: Get by date range
-        List<Metadata> dated = getImagesByDateRange(conn, "2026-01-01", "2026-12-31");
-        System.out.println("\nImages from 2026: " + dated.size());
-        
-        // TEST: Get & print imageas within 10km of first image
-        if (!recent.isEmpty() && recent.get(0).gps_flag) {
-            Metadata first = recent.get(0); // First image metadata
-            List<Metadata> nearby = getImagesByLocation(conn, first.latitude, first.longitude, 10.0);
-            System.out.println("\nImages within 10km: " + nearby.size());
-            for (Metadata m : nearby) {
+        try (Connection conn = connect()) {
+            setupSchema(conn);
+            shipImgs(meta, conn, jpgs);
+
+            System.out.println("\n=== Testing Query Methods ===");
+
+            // TEST: Get recent images
+            List<Metadata> recent = getRecentImages(conn, 3);
+            System.out.println("Recent images: " + recent.size());
+            for (Metadata m : recent) {
                 System.out.println("  - " + m.filename);
+            }
+
+            // TEST: Get by date range
+            List<Metadata> dated = getImagesByDateRange(conn, "2026-01-01", "2026-12-31");
+            System.out.println("\nImages from 2026: " + dated.size());
+
+            // TEST: Get & print imageas within 10km of first image
+            if (!recent.isEmpty() && recent.get(0).gps_flag) {
+                Metadata first = recent.get(0); // First image metadata
+                List<Metadata> nearby = getImagesByLocation(conn, first.latitude, first.longitude, 10.0);
+                System.out.println("\nImages within 10km: " + nearby.size());
+                for (Metadata m : nearby) {
+                    System.out.println("  - " + m.filename);
+                }
             }
         }
     }
-}
 }
