@@ -21,6 +21,12 @@ public class ImgHash {
         return bytesToHex(hashBytes);
     }
 
+    public static String sha256(byte[] data) throws NoSuchAlgorithmException {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hashBytes = digest.digest(data);
+        return bytesToHex(hashBytes);
+    }
+
     private static String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) {

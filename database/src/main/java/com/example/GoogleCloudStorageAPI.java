@@ -4,6 +4,7 @@ import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -17,6 +18,20 @@ public class GoogleCloudStorageAPI {
     public static void main(String[] args) throws IOException {
         uploadFile("src/main/java/com/example/images/IMG_3141.jpg", "IMG_3141.jpg");
         downloadFile("IMG_3141.jpg", "src/main/java/com/example/images/downloaded_IMG_3141.jpg");
+    }
+
+    public static String uploadFile(MultipartFile file) throws IOException, java.security.NoSuchAlgorithmException {
+        String objectName = ImgHash.sha256(file.getBytes());
+        Storage storage = StorageOptions.newBuilder().setProjectId(PROJECT_ID).build().getService();
+
+        BlobId blobId = BlobId.of(BUCKET_NAME, objectName);
+        BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
+
+        storage.create(blobInfo, file.getBytes());
+
+        System.out.println("File " + file.getOriginalFilename() + " uploaded to bucket " + BUCKET_NAME + " as "
+                + blobId.getName());
+        return objectName;
     }
 
     public static void uploadFile(String localFilePath, String objectName) throws IOException {
