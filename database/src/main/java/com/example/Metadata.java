@@ -4,6 +4,9 @@ public class Metadata {
     public String sha256;
     public String cloud_uri;
 
+    public String first_name;
+    public String last_name;
+
     public String filename;
     public long filesize;
     public int width;

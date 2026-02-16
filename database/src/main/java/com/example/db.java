@@ -16,17 +16,17 @@ class db {
 
     static Connection connect() throws SQLException {
 
+        String url = "jdbc:postgresql://localhost:5432/postgres";
+
         // BRIAN'S POSTGRES USER & PASS
-        // String url = "jdbc:postgresql://localhost:5432/postgres";
-        // return DriverManager.getConnection(url, "postgres", "rubiks");
+        String user = "postgres";
+        String pass = "rubiks";
 
         // VICTOR'S POSTGRES USER & PASS
-        String url = "jdbc:postgresql://localhost:5432/postgres";
-        String user = "victorli";
-        String pass = "rubix";
+        // String user = "victorli";
+        // String pass = "rubix";
 
         // CARSON's POSTGRES USER & PASS
-        // String url = "jdbc:postgresql://localhost:5432/postgres";
         // String user = "postgres";
         // String pass = "postgres";
 
@@ -66,7 +66,14 @@ class db {
         meta.height = ImgDet.getHeight(f);
         meta.cloud_uri = "";
 
+        meta.first_name = loadName();
+        meta.last_name = loadName();
+
         return meta;
+    }
+
+    static String loadName() {
+        return "";
     }
 
     static void setupSchema(Connection conn) throws SQLException {
@@ -78,6 +85,9 @@ class db {
                         id serial primary key,
                         img_hash varchar(64) unique,
                         cloud_uri text not null,
+
+                        first_name text,
+                        last_name text,
 
                         filename text,
                         filesize_bytes bigint,
@@ -97,9 +107,9 @@ class db {
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
         String sql = "insert into images (" +
                 "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
-                "cloud_uri, width, height, filesize_bytes) " +
+                "cloud_uri, width, height, filesize_bytes, first_name, last_name) " +
                 "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY:MM:DD HH24:MI:SS'), " +
-                "?, ?, ?, ?)";
+                "?, ?, ?, ?, ?, ?)";
 
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setString(1, meta.sha256);
@@ -121,6 +131,8 @@ class db {
         ps.setInt(9, meta.width);
         ps.setInt(10, meta.height);
         ps.setLong(11, meta.filesize);
+        ps.setString(12, meta.first_name);
+        ps.setString(13, meta.last_name);
         ps.executeUpdate();
     }
 
@@ -135,6 +147,8 @@ class db {
         meta.width = rs.getInt("width");
         meta.height = rs.getInt("height");
         meta.gps_flag = rs.getBoolean("gps_flag");
+        meta.first_name = rs.getString("first_name");
+        meta.last_name = rs.getString("last_name");
 
         Double lat = (Double) rs.getObject("latitude");
         Double lon = (Double) rs.getObject("longitude");
@@ -290,7 +304,7 @@ class db {
     /* -------------------------------------------------------------------------- */
 
     public static void main(String[] args) throws Exception {
-        File folder = new File("src/main/java/com/example/images");
+        File folder = new File("com/example/images");
         List<File> jpgs = prepareImages(folder);
         Metadata meta = new Metadata();
 
