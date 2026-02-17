@@ -37,6 +37,12 @@
     <artifactId>postgresql</artifactId>
     <version>42.7.9</version>
   </dependency>
+
+  <dependency>
+    <groupId>org.apache.commons</groupId>
+    <artifactId>commons-imaging</artifactId>
+    <version>1.0-alpha3</version>
+  </dependency>
 </dependencies>
 
 

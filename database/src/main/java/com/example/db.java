@@ -19,12 +19,12 @@ class db {
         String url = "jdbc:postgresql://localhost:5432/postgres";
 
         // BRIAN'S POSTGRES USER & PASS
-        String user = "postgres";
-        String pass = "rubiks";
+        // String user = "postgres";
+        // String pass = "rubiks";
 
         // VICTOR'S POSTGRES USER & PASS
-        // String user = "victorli";
-        // String pass = "rubix";
+        String user = "victorli";
+        String pass = "rubix";
 
         // CARSON's POSTGRES USER & PASS
         // String user = "postgres";
@@ -36,7 +36,15 @@ class db {
 
     static Metadata loadMetadata(File f) throws Exception {
         Metadata meta = new Metadata();
-        EXIFParser.ExifData d = EXIFParser.parse(f.getAbsolutePath());
+        EXIFParser.ExifData d;
+        String ext = ImgDet.getExtension(f.getName()).toLowerCase();
+        if (ext.equals("png")) {
+            d = ImgDet.parseExifFromPng(f);
+            if (d == null)
+                d = new EXIFParser.ExifData();
+        } else {
+            d = EXIFParser.parse(f.getAbsolutePath());
+        }
 
         meta.filename = f.getName();
         meta.filesize = f.length();
@@ -47,7 +55,8 @@ class db {
         System.out.println("  date: " + d.date);
         System.out.println("  lat: " + d.lat);
         System.out.println("  lon: " + d.lon);
-        System.out.println("  alt: " + d.alt);
+        Double altFeet = (d.alt != null) ? d.alt * 3.280839895 : null;
+        System.out.println("  alt: " + altFeet);
 
         if (d.lat != null && d.lon != null) {
             meta.latitude = d.lat;
