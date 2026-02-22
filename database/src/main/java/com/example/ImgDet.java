@@ -260,7 +260,7 @@ public class ImgDet {
             if (d.lat != null && d.lon != null) {
                 meta.latitude = d.lat;
                 meta.longitude = -d.lon;
-                meta.altitude = (d.alt != null) ? d.alt * 3.280839895 : null;
+                meta.altitude = d.alt;
                 meta.gps_flag = true;
             } else {
                 meta.latitude = null;

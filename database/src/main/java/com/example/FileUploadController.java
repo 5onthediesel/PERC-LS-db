@@ -52,8 +52,6 @@ public class FileUploadController {
                     + "id serial primary key, "
                     + "img_hash varchar(64) unique, "
                     + "cloud_uri text not null, "
-                    + "first_name text, "
-                    + "last_name text, "
                     + "filename text, "
                     + "filesize_bytes bigint, "
                     + "width int, "
@@ -67,8 +65,6 @@ public class FileUploadController {
                     + "temperature_c double precision, "
                     + "humidity double precision"
                     + ")");
-            s.execute("alter table images add column if not exists first_name text");
-            s.execute("alter table images add column if not exists last_name text");
             s.execute("alter table images add column if not exists filename text");
             s.execute("alter table images add column if not exists filesize_bytes bigint");
             s.execute("alter table images add column if not exists width int");
