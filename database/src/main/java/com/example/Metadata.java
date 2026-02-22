@@ -4,8 +4,8 @@ public class Metadata {
     public String sha256;
     public String cloud_uri;
 
-    public String first_name;
-    public String last_name;
+    public Double humidity;
+    public Double temperature_c;
 
     public String filename;
     public long filesize;
