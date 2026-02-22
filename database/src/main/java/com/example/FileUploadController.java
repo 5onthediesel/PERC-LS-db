@@ -63,7 +63,9 @@ public class FileUploadController {
                     + "longitude double precision, "
                     + "altitude double precision, "
                     + "datetime_taken timestamptz, "
-                    + "datetime_uploaded timestamptz default now()"
+                    + "datetime_uploaded timestamptz default now(), "
+                    + "temperature_c double precision, "
+                    + "humidity double precision"
                     + ")");
             s.execute("alter table images add column if not exists first_name text");
             s.execute("alter table images add column if not exists last_name text");
@@ -77,6 +79,8 @@ public class FileUploadController {
             s.execute("alter table images add column if not exists altitude double precision");
             s.execute("alter table images add column if not exists datetime_taken timestamptz");
             s.execute("alter table images add column if not exists datetime_uploaded timestamptz default now()");
+            s.execute("alter table images add column if not exists temperature_c double precision");
+            s.execute("alter table images add column if not exists humidity double precision");
         }
     }
 
@@ -91,7 +95,7 @@ public class FileUploadController {
                 }
             }
 
-            List<Map<String, String>> uploadedFiles = new ArrayList<>();
+            List<Map<String, Object>> uploadedFiles = new ArrayList<>();
             try (Connection conn = db.connect()) {
                 ensureSchema(conn);
 
@@ -116,27 +120,32 @@ public class FileUploadController {
                         if (existing != null) {
                             System.out.println("Duplicate image hash detected; skipping upload. hash=" + meta.sha256
                                     + ", originalName=" + originalName);
-                            Map<String, String> fileInfo = new HashMap<>();
+                            Map<String, Object> fileInfo = new HashMap<>();
                             fileInfo.put("originalName", originalName);
                             fileInfo.put("status", "duplicate hash; skipped upload");
                             fileInfo.put("objectName", objectName);
+                            fileInfo.put("sha256", existing.sha256);
+                            fileInfo.put("cloudUri", existing.cloud_uri);
+                            addMetadataToFileInfo(fileInfo, existing);
                             uploadedFiles.add(fileInfo);
                             continue;
                         }
 
-                        // upload to GCS
+                        // upload to GCS and insert metadata into DB
                         GoogleCloudStorageAPI.uploadFile(jpgFile.getAbsolutePath(), objectName);
                         meta.cloud_uri = "gs://" + BUCKET_NAME + "/" + objectName;
                         db.insertMeta(conn, meta);
 
-                        Map<String, String> fileInfo = new HashMap<>();
+                        Map<String, Object> fileInfo = new HashMap<>();
                         fileInfo.put("originalName", originalName);
                         fileInfo.put("objectName", objectName);
                         fileInfo.put("cloudUri", meta.cloud_uri);
+                        fileInfo.put("sha256", meta.sha256);
+                        addMetadataToFileInfo(fileInfo, meta);
                         uploadedFiles.add(fileInfo);
                     } catch (SQLException e) {
                         if ("23505".equals(e.getSQLState())) {
-                            Map<String, String> fileInfo = new HashMap<>();
+                            Map<String, Object> fileInfo = new HashMap<>();
                             fileInfo.put("originalName", originalName);
                             fileInfo.put("error", "Duplicate image hash; skipping DB insert");
                             uploadedFiles.add(fileInfo);
@@ -160,5 +169,26 @@ public class FileUploadController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage(), "stackTrace", sw.toString()));
         }
+    }
+
+    private static void addMetadataToFileInfo(Map<String, Object> fileInfo, Metadata meta) {
+        // File information
+        fileInfo.put("filename", meta.filename);
+        fileInfo.put("filesizeBytes", meta.filesize);
+        fileInfo.put("width", meta.width);
+        fileInfo.put("height", meta.height);
+
+        // GPS information
+        fileInfo.put("gpsFlag", meta.gps_flag);
+        fileInfo.put("latitude", meta.latitude);
+        fileInfo.put("longitude", meta.longitude);
+        fileInfo.put("altitude", meta.altitude);
+
+        // Datetime information
+        fileInfo.put("datetimeTaken", meta.datetime);
+
+        // Weather information
+        fileInfo.put("temperatureC", meta.temperature_c);
+        fileInfo.put("humidity", meta.humidity);
     }
 }
