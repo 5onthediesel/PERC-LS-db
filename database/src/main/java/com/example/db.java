@@ -12,6 +12,11 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
+import java.net.URI;
+import java.net.http.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
 class db {
 
     static Connection connect() throws SQLException {
@@ -42,12 +47,12 @@ class db {
         meta.filesize = f.length();
         meta.datetime = d.date;
 
-        // DEBUG (Print EXIF)
-        System.out.println("DEBUG " + f.getName() + ":");
-        System.out.println("  date: " + d.date);
-        System.out.println("  lat: " + d.lat);
-        System.out.println("  lon: " + d.lon);
-        System.out.println("  alt: " + d.alt);
+        // // DEBUG (Print EXIF)
+        // System.out.println("DEBUG " + f.getName() + ":");
+        // System.out.println("  date: " + d.date);
+        // System.out.println("  lat: " + d.lat);
+        // System.out.println("  lon: " + d.lon);
+        // System.out.println("  alt: " + d.alt);
 
         if (d.lat != null && d.lon != null) {
             meta.latitude = d.lat;
@@ -65,15 +70,62 @@ class db {
         meta.width = ImgDet.getWidth(f);
         meta.height = ImgDet.getHeight(f);
         meta.cloud_uri = "";
-
-        meta.first_name = loadName();
-        meta.last_name = loadName();
+        populateWeather(meta);
 
         return meta;
     }
 
-    static String loadName() {
-        return "";
+    public static void populateWeather(Metadata meta) {
+        try {
+            if (meta == null || meta.latitude == null || meta.longitude == null || meta.datetime == null)
+                return;
+
+            DateTimeFormatter fmt =
+                    DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss");
+
+            LocalDateTime photoTime = LocalDateTime.parse(meta.datetime, fmt);
+
+            String date = photoTime.toLocalDate().toString();
+            int hour = photoTime.getHour();
+
+            String url =
+                "https://archive-api.open-meteo.com/v1/archive"
+                + "?latitude=" + meta.latitude
+                + "&longitude=" + meta.longitude
+                + "&start_date=" + date
+                + "&end_date=" + date
+                + "&hourly=temperature_2m,relative_humidity_2m"
+                + "&timezone=auto";
+
+            HttpClient client = HttpClient.newHttpClient();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response =
+                    client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200)
+                return;
+
+            String body = response.body();
+
+            // VERY simple parsing (safe for this API format)
+
+            String temps = body.split("\"temperature_2m\":\\[")[1].split("\\]")[0];
+            String hums  = body.split("\"relative_humidity_2m\":\\[")[1].split("\\]")[0];
+
+            String tempStr = temps.split(",")[hour].trim();
+            String humStr  = hums.split(",")[hour].trim();
+
+            meta.temperature_c = Double.parseDouble(tempStr);
+            meta.humidity    = Double.parseDouble(humStr);
+
+        } catch (Exception ignored) {
+            // Never crash metadata loading
+        }
     }
 
     static void setupSchema(Connection conn) throws SQLException {
@@ -86,8 +138,8 @@ class db {
                         img_hash varchar(64) unique,
                         cloud_uri text not null,
 
-                        first_name text,
-                        last_name text,
+                        humidity double precision,
+                        temperature_c double precision,
 
                         filename text,
                         filesize_bytes bigint,
@@ -107,8 +159,8 @@ class db {
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
         String sql = "insert into images (" +
                 "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
-                "cloud_uri, width, height, filesize_bytes, first_name, last_name) " +
-                "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY:MM:DD HH24:MI:SS'), " +
+                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity) " +
+                "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS'), " +
                 "?, ?, ?, ?, ?, ?)";
 
         PreparedStatement ps = conn.prepareStatement(sql);
@@ -131,8 +183,8 @@ class db {
         ps.setInt(9, meta.width);
         ps.setInt(10, meta.height);
         ps.setLong(11, meta.filesize);
-        ps.setString(12, meta.first_name);
-        ps.setString(13, meta.last_name);
+        ps.setDouble(12, meta.temperature_c);
+        ps.setDouble(13, meta.humidity);
         ps.executeUpdate();
     }
 
@@ -147,8 +199,6 @@ class db {
         meta.width = rs.getInt("width");
         meta.height = rs.getInt("height");
         meta.gps_flag = rs.getBoolean("gps_flag");
-        meta.first_name = rs.getString("first_name");
-        meta.last_name = rs.getString("last_name");
 
         Double lat = (Double) rs.getObject("latitude");
         Double lon = (Double) rs.getObject("longitude");
@@ -160,6 +210,9 @@ class db {
 
         Timestamp ts = rs.getTimestamp("datetime_taken");
         meta.datetime = (ts != null) ? ts.toString() : null;
+
+        meta.temperature_c = rs.getDouble("temperature_c");
+        meta.humidity = rs.getDouble("humidity");
 
         return meta;
     }
@@ -304,7 +357,7 @@ class db {
     /* -------------------------------------------------------------------------- */
 
     public static void main(String[] args) throws Exception {
-        File folder = new File("com/example/images");
+        File folder = new File("images");
         List<File> jpgs = prepareImages(folder);
         Metadata meta = new Metadata();
 
@@ -312,28 +365,28 @@ class db {
             setupSchema(conn);
             shipImgs(meta, conn, jpgs);
 
-            System.out.println("\n=== Testing Query Methods ===");
+            // System.out.println("\n=== Testing Query Methods ===");
+            //
+            // // TEST: Get recent images
+            // List<Metadata> recent = getRecentImages(conn, 3);
+            // System.out.println("Recent images: " + recent.size());
+            // for (Metadata m : recent) {
+            //     System.out.println("  - " + m.datetime);
+            // }
 
-            // TEST: Get recent images
-            List<Metadata> recent = getRecentImages(conn, 3);
-            System.out.println("Recent images: " + recent.size());
-            for (Metadata m : recent) {
-                System.out.println("  - " + m.filename);
-            }
+            // // TEST: Get by date range
+            // List<Metadata> dated = getImagesByDateRange(conn, "2026-01-01", "2026-12-31");
+            // System.out.println("\nImages from 2026: " + dated.size());
 
-            // TEST: Get by date range
-            List<Metadata> dated = getImagesByDateRange(conn, "2026-01-01", "2026-12-31");
-            System.out.println("\nImages from 2026: " + dated.size());
-
-            // TEST: Get & print imageas within 10km of first image
-            if (!recent.isEmpty() && recent.get(0).gps_flag) {
-                Metadata first = recent.get(0); // First image metadata
-                List<Metadata> nearby = getImagesByLocation(conn, first.latitude, first.longitude, 10.0);
-                System.out.println("\nImages within 10km: " + nearby.size());
-                for (Metadata m : nearby) {
-                    System.out.println("  - " + m.filename);
-                }
-            }
+            // // TEST: Get & print imageas within 10km of first image
+            // if (!recent.isEmpty() && recent.get(0).gps_flag) {
+            //     Metadata first = recent.get(0); // First image metadata
+            //     List<Metadata> nearby = getImagesByLocation(conn, first.latitude, first.longitude, 10.0);
+            //     System.out.println("\nImages within 10km: " + nearby.size());
+            //     for (Metadata m : nearby) {
+            //         System.out.println("  - " + m.filename);
+            //     }
+            // }
         }
     }
 }
