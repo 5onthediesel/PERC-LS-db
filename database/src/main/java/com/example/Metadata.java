@@ -6,6 +6,7 @@ public class Metadata {
 
     public Double humidity;
     public Double temperature_c;
+    public String weather_desc;
 
     public String filename;
     public long filesize;

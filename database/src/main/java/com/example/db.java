@@ -24,12 +24,12 @@ class db {
         String url = "jdbc:postgresql://localhost:5432/postgres";
 
         // BRIAN'S POSTGRES USER & PASS
-        // String user = "postgres";
-        // String pass = "rubiks";
+        String user = "postgres";
+        String pass = "rubiks";
 
         // VICTOR'S POSTGRES USER & PASS
-        String user = "victorli";
-        String pass = "rubix";
+        // String user = "victorli";
+        // String pass = "rubix";
 
         // CARSON's POSTGRES USER & PASS
         // String user = "postgres";
@@ -83,6 +83,23 @@ class db {
         return meta;
     }
 
+    private static String weatherCodeToString(int code) {
+        switch (code) {
+            case 0: return "Clear sky";
+            case 1: case 2: case 3: return "Partly cloudy";
+            case 45: case 48: return "Fog";
+            case 51: case 53: case 55: return "Drizzle";
+            case 61: case 63: case 65: return "Rain";
+            case 66: case 67: return "Freezing rain";
+            case 71: case 73: case 75: return "Snow";
+            case 77: return "Snow grains";
+            case 80: case 81: case 82: return "Rain showers";
+            case 85: case 86: return "Snow showers";
+            case 95: case 96: case 99: return "Thunderstorm";
+            default: return "Unknown";
+        }
+    }
+
     public static void populateWeather(Metadata meta) {
         try {
             if (meta == null || meta.latitude == null || meta.longitude == null || meta.datetime == null)
@@ -100,7 +117,7 @@ class db {
                     + "&longitude=" + meta.longitude
                     + "&start_date=" + date
                     + "&end_date=" + date
-                    + "&hourly=temperature_2m,relative_humidity_2m"
+                    + "&hourly=temperature_2m,relative_humidity_2m,weathercode"
                     + "&timezone=auto";
 
             HttpClient client = HttpClient.newHttpClient();
@@ -121,12 +138,16 @@ class db {
 
             String temps = body.split("\"temperature_2m\":\\[")[1].split("\\]")[0];
             String hums = body.split("\"relative_humidity_2m\":\\[")[1].split("\\]")[0];
+            String wcodes = body.split("\"weathercode\":\\[")[1].split("\\]")[0];
+            String codeStr = wcodes.split(",")[hour].trim();
+            int weathercode = Integer.parseInt(codeStr);
 
             String tempStr = temps.split(",")[hour].trim();
             String humStr = hums.split(",")[hour].trim();
 
             meta.temperature_c = Double.parseDouble(tempStr);
             meta.humidity = Double.parseDouble(humStr);
+            meta.weather_desc = weatherCodeToString(weathercode);
 
         } catch (Exception ignored) {
             // Never crash metadata loading
@@ -145,6 +166,7 @@ class db {
 
                         humidity double precision,
                         temperature_c double precision,
+                        weather_desc text,
 
                         filename text,
                         filesize_bytes bigint,
@@ -164,9 +186,9 @@ class db {
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
         String sql = "insert into images (" +
                 "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
-                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity) " +
+                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc) " +
                 "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS'), " +
-                "?, ?, ?, ?, ?, ?)";
+                "?, ?, ?, ?, ?, ?, ?)";
 
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setString(1, meta.sha256);
@@ -190,6 +212,7 @@ class db {
         ps.setLong(11, meta.filesize);
         ps.setDouble(12, meta.temperature_c);
         ps.setDouble(13, meta.humidity);
+        ps.setString(14, meta.weather_desc);
         ps.executeUpdate();
     }
 

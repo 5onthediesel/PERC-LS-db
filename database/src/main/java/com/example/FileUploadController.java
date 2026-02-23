@@ -63,7 +63,8 @@ public class FileUploadController {
                     + "datetime_taken timestamptz, "
                     + "datetime_uploaded timestamptz default now(), "
                     + "temperature_c double precision, "
-                    + "humidity double precision"
+                    + "humidity double precision, "
+                    + "weather_desc text"
                     + ")");
             s.execute("alter table images add column if not exists filename text");
             s.execute("alter table images add column if not exists filesize_bytes bigint");
@@ -77,6 +78,7 @@ public class FileUploadController {
             s.execute("alter table images add column if not exists datetime_uploaded timestamptz default now()");
             s.execute("alter table images add column if not exists temperature_c double precision");
             s.execute("alter table images add column if not exists humidity double precision");
+            s.execute("alter table images add column if not exists weather_desc text");
         }
     }
 
