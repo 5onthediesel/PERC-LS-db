@@ -85,38 +85,49 @@ public class ImagePipeline {
 
     /**
      * Insert metadata into PostgreSQL database (cs370.images table).
+     * Matches db.java insertMeta method exactly for consistency.
      */
     private static void insertMeta(Connection conn, Metadata meta, String filePath) throws SQLException {
-        String sql = "INSERT INTO cs370.images (" +
-                "img_hash, filename, filesize_bytes, width, height, " +
-                "gps_flag, latitude, longitude, altitude, " +
-                "datetime_taken, temperature_c, humidity, weather_desc, cloud_uri" +
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS'), ?, ?, ?, ?)";
+        String sql = "insert into cs370.images (" +
+                "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
+                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc) " +
+                "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS'), " +
+                "?, ?, ?, ?, ?, ?, ?)";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, meta.sha256);
             ps.setString(2, meta.filename);
-            ps.setLong(3, meta.filesize);
-            ps.setInt(4, meta.width);
-            ps.setInt(5, meta.height);
-            ps.setBoolean(6, meta.gps_flag);
+            ps.setBoolean(3, meta.gps_flag);
 
             if (meta.gps_flag) {
-                ps.setDouble(7, meta.latitude);
-                ps.setDouble(8, meta.longitude);
-                ps.setDouble(9, meta.altitude);
+                ps.setDouble(4, meta.latitude);
+                ps.setDouble(5, meta.longitude);
+                ps.setDouble(6, meta.altitude);
             } else {
-                ps.setNull(7, java.sql.Types.DOUBLE);
-                ps.setNull(8, java.sql.Types.DOUBLE);
-                ps.setNull(9, java.sql.Types.DOUBLE);
+                ps.setNull(4, java.sql.Types.DOUBLE);
+                ps.setNull(5, java.sql.Types.DOUBLE);
+                ps.setNull(6, java.sql.Types.DOUBLE);
             }
 
-            ps.setString(10, meta.datetime);
-            ps.setDouble(11, meta.temperature_c != null ? meta.temperature_c : 0.0);
-            ps.setDouble(12, meta.humidity != null ? meta.humidity : 0.0);
-            ps.setString(13, meta.weather_desc != null ? meta.weather_desc : "");
-            ps.setString(14, filePath);
-
+            ps.setString(7, meta.datetime);
+            ps.setString(8, filePath);
+            ps.setInt(9, meta.width);
+            ps.setInt(10, meta.height);
+            ps.setLong(11, meta.filesize);
+            
+            if (meta.temperature_c != null) {
+                ps.setDouble(12, meta.temperature_c);
+            } else {
+                ps.setNull(12, java.sql.Types.DOUBLE);
+            }
+            
+            if (meta.humidity != null) {
+                ps.setDouble(13, meta.humidity);
+            } else {
+                ps.setNull(13, java.sql.Types.DOUBLE);
+            }
+            
+            ps.setString(14, meta.weather_desc);
             ps.executeUpdate();
         }
     }
