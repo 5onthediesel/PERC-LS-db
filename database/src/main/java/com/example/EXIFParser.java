@@ -19,7 +19,7 @@ public class EXIFParser {
         // Returns empty instead of crashing
         if (raf.readUnsignedShort() != 0xFFD8) {
             raf.close();
-            return new ExifData(); 
+            return new ExifData();
         }
 
         int b;
@@ -35,9 +35,8 @@ public class EXIFParser {
                 }
             }
         }
-        
         raf.close();
-        return new ExifData(); 
+        return new ExifData();
     }
 
     public static ExifData parseExif(byte[] buf) {
@@ -79,7 +78,6 @@ public class EXIFParser {
             if (tag == 0x8825)
                 gpsOffset = value; // GPS IFD
         }
-
         if (exifOffset > 0)
             parseExifIFD(bb, tiffBase + exifOffset, d);
         if (gpsOffset > 0)
@@ -107,6 +105,29 @@ public class EXIFParser {
         }
     }
 
+    static char charRef(ByteBuffer bb, int type, int count, int value) {
+        if (type != 2 || count < 1) return 0;
+
+        int size = count; // 1 byte each
+        int pos = bb.position();
+        byte b;
+
+        if (size <= 4) {
+            if (bb.order() == ByteOrder.LITTLE_ENDIAN)
+                b = (byte)(value & 0xFF);
+            else
+                b = (byte)((value >> 24) & 0xFF);
+        } else {
+            int target = tiffBase + value;
+            if (target < 0 || target >= bb.limit()) return 0;
+
+            bb.position(target);
+            b = bb.get();
+            bb.position(pos);
+        }
+        return (char)b;
+    }
+
     static void parseGPSIFD(ByteBuffer bb, int offset, ExifData d) {
         bb.position(offset);
         int entries = bb.getShort() & 0xFFFF;
@@ -121,10 +142,12 @@ public class EXIFParser {
             int count = bb.getInt();
             int value = bb.getInt();
 
-            // if (tag == 1) latRefChar = readAsciiChar(bb, value, count);
+            if (tag == 1)
+                latRef = charRef(bb, type, count, value);
             if (tag == 2)
                 latOffset = value;
-            // if (tag == 3) lonRefChar = readAsciiChar(bb, value, count);
+            if (tag == 3)
+                lonRef = charRef(bb, type, count, value);
             if (tag == 4)
                 lonOffset = value;
             if (tag == 5)
@@ -132,15 +155,16 @@ public class EXIFParser {
             if (tag == 6)
                 altOffset = value;
         }
-
         if (latOffset > 0 && lonOffset > 0) {
             d.lat = readRationalTriplet(bb, tiffBase + latOffset);
             d.lon = readRationalTriplet(bb, tiffBase + lonOffset);
+            if (latRef == 'S') d.lat = -d.lat;
+            if (lonRef == 'W') d.lon = -d.lon;
         }
         if (altOffset > 0) {
             double alt = readRational(bb, tiffBase + altOffset);
             if (altRef == 1)
-                alt = -alt; // below sea level
+                alt = -alt;
             d.alt = alt;
         }
     }
@@ -154,7 +178,6 @@ public class EXIFParser {
             long den = bb.getInt() & 0xFFFFFFFFL;
             v[i] = (double) num / den;
         }
-
         return v[0] + v[1] / 60.0 + v[2] / 3600.0;
     }
 
@@ -164,5 +187,4 @@ public class EXIFParser {
         long den = bb.getInt() & 0xFFFFFFFFL;
         return (double) num / den;
     }
-
 }
