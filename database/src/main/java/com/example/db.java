@@ -1,6 +1,10 @@
 package com.example;
 
 import java.io.File;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -9,13 +13,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
-import java.util.ArrayList;
-import java.util.List;
-
-import java.net.URI;
-import java.net.http.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 
 class db {
 
@@ -28,12 +29,12 @@ class db {
         // String pass = "rubiks";
 
         // VICTOR'S POSTGRES USER & PASS
-        String user = "victorli";
-        String pass = "rubix";
+        // String user = "victorli";
+        // String pass = "rubix";
 
         // CARSON's POSTGRES USER & PASS
-        // String user = "postgres";
-        // String pass = "postgres";
+        String user = "postgres";
+        String pass = "postgres";
 
         Connection conn = DriverManager.getConnection(url, user, pass);
         return conn;
@@ -237,9 +238,14 @@ class db {
         ps.setInt(9, meta.width);
         ps.setInt(10, meta.height);
         ps.setLong(11, meta.filesize);
-        ps.setDouble(12, meta.temperature_c);
-        ps.setDouble(13, meta.humidity);
-        ps.setString(14, meta.weather_desc);
+        if (meta.temperature_c != null) ps.setDouble(12, meta.temperature_c);
+        else ps.setNull(12, Types.DOUBLE);
+
+        if (meta.humidity != null) ps.setDouble(13, meta.humidity);
+        else ps.setNull(13, Types.DOUBLE);
+
+        if (meta.weather_desc != null) ps.setString(14, meta.weather_desc);
+        else ps.setNull(14, Types.VARCHAR);
         ps.executeUpdate();
     }
 
