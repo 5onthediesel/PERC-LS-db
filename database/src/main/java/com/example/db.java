@@ -64,7 +64,7 @@ class db {
 
         if (d.lat != null && d.lon != null) {
             meta.latitude = d.lat;
-            meta.longitude = -d.lon;
+            meta.longitude = d.lon;
             meta.altitude = d.alt;
             meta.gps_flag = true;
         } else {
