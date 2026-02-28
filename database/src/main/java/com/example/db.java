@@ -12,6 +12,8 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.checkerframework.checker.units.qual.m;
+
 import java.net.URI;
 import java.net.http.*;
 import java.time.LocalDateTime;
@@ -79,6 +81,7 @@ class db {
         meta.height = ImgDet.getHeight(f);
         meta.cloud_uri = "";
         populateWeather(meta);
+        meta.processed_status = true;
 
         return meta;
     }
@@ -187,25 +190,26 @@ class db {
         s.execute("drop table if exists images");
         s.execute("""
                     create table if not exists images (
-                        id serial primary key,
-                        img_hash varchar(64) unique,
-                        cloud_uri text not null,
+                    id serial primary key,
+                    img_hash varchar(64) unique,
+                    cloud_uri text not null,
 
-                        humidity double precision,
-                        temperature_c double precision,
-                        weather_desc text,
+                    humidity double precision,
+                    temperature_c double precision,
+                    weather_desc text,
 
-                        filename text,
-                        filesize_bytes bigint,
-                        width int,
-                        height int,
+                    filename text,
+                    filesize_bytes bigint,
+                    width int,
+                    height int,
 
-                        gps_flag boolean,
-                        latitude double precision,
-                        longitude double precision,
-                        altitude double precision,
-                        datetime_taken timestamptz,
-                        datetime_uploaded timestamptz default now()
+                    gps_flag boolean,
+                    latitude double precision,
+                    longitude double precision,
+                    altitude double precision,
+                    datetime_taken timestamptz,
+                    datetime_uploaded timestamptz default now(),
+                    processed_status boolean
                     )
                 """);
     }
@@ -213,9 +217,9 @@ class db {
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
         String sql = "insert into images (" +
                 "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
-                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc) " +
+                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc, processed_status) " +
                 "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS'), " +
-                "?, ?, ?, ?, ?, ?, ?)";
+                "?, ?, ?, ?, ?, ?, ?, ?)";
 
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setString(1, meta.sha256);
@@ -240,7 +244,66 @@ class db {
         ps.setDouble(12, meta.temperature_c);
         ps.setDouble(13, meta.humidity);
         ps.setString(14, meta.weather_desc);
+        ps.setBoolean(15, meta.processed_status);
         ps.executeUpdate();
+    }
+
+    static List<Metadata> getUnprocessedImages(Connection conn, int batchSize) throws SQLException {
+        List<Metadata> results = new ArrayList<>();
+
+        String sql = "SELECT * FROM cs370.images " +
+                "WHERE processed_status = false " +
+                "ORDER BY datetime_uploaded ASC " +
+                "LIMIT ?";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, batchSize);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    results.add(buildMetadataFromResultSet(rs));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    static int updateProcessedMetadata(Connection conn, String hash, Metadata meta) throws SQLException {
+        String sql = "UPDATE cs370.images SET " +
+                "filename = ?, " +
+                "filesize_bytes = ?, " +
+                "width = ?, " +
+                "height = ?, " +
+                "gps_flag = ?, " +
+                "latitude = ?, " +
+                "longitude = ?, " +
+                "altitude = ?, " +
+                "datetime_taken = CASE WHEN ? IS NULL THEN NULL " +
+                "ELSE to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS') END, " +
+                "temperature_c = ?, " +
+                "humidity = ?, " +
+                "weather_desc = ?, " +
+                "processed_status = true " +
+                "WHERE img_hash = ? AND processed_status = false";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, meta.filename);
+            ps.setLong(2, meta.filesize);
+            ps.setInt(3, meta.width);
+            ps.setInt(4, meta.height);
+            ps.setBoolean(5, meta.gps_flag);
+            ps.setObject(6, meta.latitude, Types.DOUBLE);
+            ps.setObject(7, meta.longitude, Types.DOUBLE);
+            ps.setObject(8, meta.altitude, Types.DOUBLE);
+            ps.setString(9, meta.datetime);
+            ps.setString(10, meta.datetime);
+            ps.setObject(11, meta.temperature_c, Types.DOUBLE);
+            ps.setObject(12, meta.humidity, Types.DOUBLE);
+            ps.setString(13, meta.weather_desc);
+            ps.setString(14, hash);
+            return ps.executeUpdate();
+        }
     }
 
     // Builds a Metadata object from a SQL ResultSet row
@@ -268,6 +331,8 @@ class db {
 
         meta.temperature_c = rs.getDouble("temperature_c");
         meta.humidity = rs.getDouble("humidity");
+        meta.weather_desc = rs.getString("weather_desc");
+        meta.processed_status = rs.getBoolean("processed_status");
 
         return meta;
     }
@@ -275,7 +340,7 @@ class db {
     // Retrieve a specific image's metadata by its SHA-256 hash
     // Example: Metadata img = getImageByHash(conn, "a3f2b9c8d1e5...");
     static Metadata getImageByHash(Connection conn, String hash) throws SQLException {
-        String sql = "SELECT * FROM cs370.images WHERE img_hash = ?";
+        String sql = "SELECT * FROM cs370.images WHERE img_hash = ? AND processed_status = true";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, hash);
@@ -298,6 +363,7 @@ class db {
         String sql = "SELECT * FROM cs370.images " +
                 "WHERE datetime_taken >= ?::date " +
                 "AND datetime_taken < (?::date + interval '1 day') " +
+                "AND processed_status = true " +
                 "ORDER BY datetime_taken DESC";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -335,6 +401,7 @@ class db {
                 "  WHERE gps_flag = true " +
                 "    AND latitude IS NOT NULL " +
                 "    AND longitude IS NOT NULL " +
+                "    AND processed_status = true " +
                 ") AS subquery " +
                 "WHERE distance_km <= ? " +
                 "ORDER BY distance_km";
@@ -359,6 +426,7 @@ class db {
         List<Metadata> results = new ArrayList<>();
 
         String sql = "SELECT * FROM cs370.images " +
+                "WHERE processed_status = true " +
                 "ORDER BY datetime_uploaded DESC " +
                 "LIMIT ?";
 

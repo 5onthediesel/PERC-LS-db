@@ -18,4 +18,5 @@ public class Metadata {
     public Double longitude;
     public Double altitude;
     public String datetime;
+    public boolean processed_status;
 }
