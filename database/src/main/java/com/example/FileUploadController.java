@@ -1,5 +1,7 @@
 package com.example;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +29,13 @@ import java.util.Map;
 @RequestMapping("/api")
 @CrossOrigin(origins = "http://localhost:3000")
 public class FileUploadController {
+
+    private static class GpsUploadData {
+        public String filename;
+        public Double longitude;
+        public Double latitude;
+        public Double altitude;
+    }
 
     private static final String BUCKET_NAME = "cs370perc-bucket";
     private static final String[] ALLOWED_EXTENSIONS = { ".png", ".jpg", ".jpeg", ".heic" };
@@ -64,7 +73,8 @@ public class FileUploadController {
                     + "datetime_uploaded timestamptz default now(), "
                     + "temperature_c double precision, "
                     + "humidity double precision, "
-                    + "weather_desc text"
+                    + "weather_desc text, "
+                    + "processed_status boolean"
                     + ")");
             s.execute("alter table images add column if not exists filename text");
             s.execute("alter table images add column if not exists filesize_bytes bigint");
@@ -83,7 +93,137 @@ public class FileUploadController {
     }
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> uploadFiles(@RequestParam("files") MultipartFile[] files) {
+    public ResponseEntity<?> uploadFileUnprocessed(
+            @RequestParam("files") MultipartFile[] files,
+            @RequestParam(value = "gpsData", required = false) String gpsDataJson) {
+        try {
+            for (MultipartFile file : files) {
+                String originalName = file.getOriginalFilename();
+                if (!isAllowedImageName(originalName)) {
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(Map.of("error", "Files must be images (png, jpeg, jpg, or heic)"));
+                }
+            }
+
+            List<GpsUploadData> gpsDataList = List.of();
+            if (gpsDataJson != null && !gpsDataJson.isBlank()) {
+                ObjectMapper objectMapper = new ObjectMapper();
+                gpsDataList = objectMapper.readValue(gpsDataJson, new TypeReference<List<GpsUploadData>>() {
+                });
+                if (gpsDataList.size() != files.length) {
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(Map.of("error", "gpsData length must match files length"));
+                }
+            }
+
+            List<Map<String, Object>> uploadedFiles = new ArrayList<>();
+            try (Connection conn = db.connect()) {
+                ensureSchema(conn);
+
+                for (int i = 0; i < files.length; i++) {
+                    MultipartFile file = files[i];
+                    String originalName = file.getOriginalFilename();
+                    String suffix = (originalName == null || originalName.isBlank()) ? ".bin" : "-" + originalName;
+                    Path tempFile = Files.createTempFile("upload-", suffix);
+
+                    try {
+                        Files.write(tempFile, file.getBytes());
+
+                        String ext = ImgDet.getExtension(originalName == null ? "" : originalName).toLowerCase();
+                        String dotExt = (ext == null || ext.isBlank()) ? ".bin" : "." + ext;
+
+                        Metadata meta = new Metadata();
+                        meta.filename = originalName;
+                        meta.filesize = Files.size(tempFile);
+                        meta.sha256 = ImgHash.sha256(tempFile.toFile());
+                        meta.cloud_uri = "";
+                        meta.processed_status = false;
+
+                        GpsUploadData gps = gpsDataList.isEmpty() ? null : gpsDataList.get(i);
+                        if (gps != null && gps.filename != null && originalName != null
+                                && !gps.filename.equals(originalName)) {
+                            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                                    .body(Map.of("error",
+                                            "gpsData filename mismatch at index " + i + ": expected "
+                                                    + originalName + " but got " + gps.filename));
+                        }
+                        if (gps != null && gps.latitude != null && gps.longitude != null) {
+                            meta.latitude = gps.latitude;
+                            meta.longitude = gps.longitude;
+                            meta.altitude = gps.altitude;
+                            meta.gps_flag = true;
+                        } else {
+                            meta.latitude = null;
+                            meta.longitude = null;
+                            meta.altitude = null;
+                            meta.gps_flag = false;
+                        }
+
+                        meta.datetime = null;
+                        meta.width = 0;
+                        meta.height = 0;
+                        meta.temperature_c = 0.0;
+                        meta.humidity = 0.0;
+                        meta.weather_desc = null;
+
+                        String objectName = meta.sha256 + dotExt;
+
+                        Metadata existing = db.getImageByHash(conn, meta.sha256);
+                        if (existing != null) {
+                            System.out.println("Duplicate image hash detected; skipping upload. hash=" + meta.sha256
+                                    + ", originalName=" + originalName);
+                            Map<String, Object> fileInfo = new HashMap<>();
+                            fileInfo.put("originalName", originalName);
+                            fileInfo.put("status", "duplicate hash; skipped upload");
+                            fileInfo.put("objectName", objectName);
+                            fileInfo.put("sha256", existing.sha256);
+                            fileInfo.put("cloudUri", existing.cloud_uri);
+                            addMetadataToFileInfo(fileInfo, existing);
+                            uploadedFiles.add(fileInfo);
+                            continue;
+                        }
+
+                        // Upload original file without converting file type
+                        GoogleCloudStorageAPI.uploadFile(tempFile.toString(), objectName);
+                        meta.cloud_uri = "gs://" + BUCKET_NAME + "/" + objectName;
+                        db.insertMeta(conn, meta);
+
+                        Map<String, Object> fileInfo = new HashMap<>();
+                        fileInfo.put("originalName", originalName);
+                        fileInfo.put("objectName", objectName);
+                        fileInfo.put("cloudUri", meta.cloud_uri);
+                        fileInfo.put("sha256", meta.sha256);
+                        fileInfo.put("processedStatus", false);
+                        addMetadataToFileInfo(fileInfo, meta);
+                        uploadedFiles.add(fileInfo);
+                    } catch (SQLException e) {
+                        if ("23505".equals(e.getSQLState())) {
+                            Map<String, Object> fileInfo = new HashMap<>();
+                            fileInfo.put("originalName", originalName);
+                            fileInfo.put("error", "Duplicate image hash; skipping DB insert");
+                            uploadedFiles.add(fileInfo);
+                        } else {
+                            throw e;
+                        }
+                    } finally {
+                        Files.deleteIfExists(tempFile);
+                    }
+                }
+            }
+
+            return ResponseEntity
+                    .ok(Map.of("message", "Files uploaded successfully (unprocessed)", "files", uploadedFiles));
+        } catch (Exception e) {
+            StringWriter sw = new StringWriter();
+            e.printStackTrace(new PrintWriter(sw));
+            System.err.println(sw.toString());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", e.getMessage(), "stackTrace", sw.toString()));
+        }
+    }
+
+    @PostMapping(value = "/upload/instant", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadFileInstantProcessing(@RequestParam("files") MultipartFile[] files) {
         try {
             for (MultipartFile file : files) {
                 String originalName = file.getOriginalFilename();
@@ -159,7 +299,8 @@ public class FileUploadController {
                 }
             }
 
-            return ResponseEntity.ok(Map.of("message", "Files uploaded successfully", "files", uploadedFiles));
+            return ResponseEntity
+                    .ok(Map.of("message", "Files uploaded successfully (instant processing)", "files", uploadedFiles));
         } catch (Exception e) {
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
