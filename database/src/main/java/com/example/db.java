@@ -12,8 +12,6 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.checkerframework.checker.units.qual.m;
-
 import java.net.URI;
 import java.net.http.*;
 import java.time.LocalDateTime;
@@ -209,6 +207,7 @@ class db {
                     altitude double precision,
                     datetime_taken timestamptz,
                     datetime_uploaded timestamptz default now(),
+                    elk_count integer,
                     processed_status boolean
                     )
                 """);
@@ -217,9 +216,10 @@ class db {
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
         String sql = "insert into images (" +
                 "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
-                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc, processed_status) " +
+                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc, elk_count, processed_status) "
+                +
                 "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS'), " +
-                "?, ?, ?, ?, ?, ?, ?, ?)";
+                "?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setString(1, meta.sha256);
@@ -244,7 +244,8 @@ class db {
         ps.setDouble(12, meta.temperature_c);
         ps.setDouble(13, meta.humidity);
         ps.setString(14, meta.weather_desc);
-        ps.setBoolean(15, meta.processed_status);
+        ps.setObject(15, meta.elk_count, Types.INTEGER);
+        ps.setBoolean(16, meta.processed_status);
         ps.executeUpdate();
     }
 
@@ -284,6 +285,7 @@ class db {
                 "temperature_c = ?, " +
                 "humidity = ?, " +
                 "weather_desc = ?, " +
+                "elk_count = ?, " +
                 "processed_status = true " +
                 "WHERE img_hash = ? AND processed_status = false";
 
@@ -301,7 +303,8 @@ class db {
             ps.setObject(11, meta.temperature_c, Types.DOUBLE);
             ps.setObject(12, meta.humidity, Types.DOUBLE);
             ps.setString(13, meta.weather_desc);
-            ps.setString(14, hash);
+            ps.setObject(14, meta.elk_count, Types.INTEGER);
+            ps.setString(15, hash);
             return ps.executeUpdate();
         }
     }
@@ -332,6 +335,7 @@ class db {
         meta.temperature_c = rs.getDouble("temperature_c");
         meta.humidity = rs.getDouble("humidity");
         meta.weather_desc = rs.getString("weather_desc");
+        meta.elk_count = (Integer) rs.getObject("elk_count");
         meta.processed_status = rs.getBoolean("processed_status");
 
         return meta;

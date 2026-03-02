@@ -4,6 +4,7 @@ import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
+import org.springframework.web.client.RestClient;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -30,6 +31,138 @@ public class FileProcessor {
 
     public static BatchResult processUnprocessedBatch() {
         return processUnprocessedBatch(DEFAULT_BATCH_SIZE);
+    }
+
+    public static BatchResult processUnprocessedBatchWithInference(ImgInference imgInference) {
+        return processUnprocessedBatchWithInference(imgInference, DEFAULT_BATCH_SIZE);
+    }
+
+    public static BatchResult processUnprocessedBatchWithInference(ImgInference imgInference, int batchSize) {
+        int effectiveBatchSize = Math.max(1, batchSize);
+        int processedCount = 0;
+        List<String> errors = new ArrayList<>();
+        List<Path> tempFiles = new ArrayList<>();
+
+        try (Connection conn = db.connect()) {
+            List<Metadata> pending = db.getUnprocessedImages(conn, effectiveBatchSize);
+
+            // Prepare image payloads for inference
+            List<ImgInference.ImagePayload> imagePayloads = new ArrayList<>();
+            List<Metadata> imageMetadataMap = new ArrayList<>();
+            for (Metadata row : pending) {
+                Path tempFile = null;
+                try {
+                    if (row.cloud_uri == null || row.cloud_uri.isBlank()) {
+                        errors.add("hash=" + row.sha256 + " failed: Missing cloud_uri");
+                        continue;
+                    }
+
+                    String ext = ImgDet.getExtension(row.cloud_uri).toLowerCase();
+                    tempFile = Files.createTempFile("processor-", "." + ext);
+                    downloadFromCloudUri(row.cloud_uri, tempFile);
+
+                    byte[] imageBytes = Files.readAllBytes(tempFile);
+                    String filename = row.filename != null ? row.filename : row.sha256 + "." + ext;
+
+                    imagePayloads.add(new ImgInference.ImagePayload(filename, imageBytes));
+                    imageMetadataMap.add(row);
+                    tempFiles.add(tempFile);
+
+                } catch (Exception e) {
+                    errors.add("hash=" + row.sha256 + " failed to prepare: " + e.getMessage());
+                    if (tempFile != null) {
+                        try {
+                            Files.deleteIfExists(tempFile);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+
+            // Call inference service if we have images
+            if (!imagePayloads.isEmpty()) {
+                try {
+                    List<Integer> elkCounts = imgInference.inferCounts(imagePayloads);
+
+                    // Update metadata with elk counts and process
+                    for (int i = 0; i < imageMetadataMap.size(); i++) {
+                        Metadata row = imageMetadataMap.get(i);
+                        Integer elkCount = (i < elkCounts.size()) ? elkCounts.get(i) : null;
+
+                        Path tempFile = null;
+                        try {
+                            String ext = ImgDet.getExtension(row.cloud_uri).toLowerCase();
+                            tempFile = Files.createTempFile("processor-", "." + ext);
+                            downloadFromCloudUri(row.cloud_uri, tempFile);
+
+                            Metadata extracted = new Metadata();
+                            extracted.sha256 = ImgHash.sha256(tempFile.toFile());
+                            extracted.datetime = extractDateTime(tempFile.toFile());
+                            extracted.cloud_uri = row.cloud_uri;
+                            extracted.filesize = tempFile.toFile().length();
+                            extracted.width = ImgDet.getWidth(tempFile.toFile());
+                            extracted.height = ImgDet.getHeight(tempFile.toFile());
+
+                            // Preserve uploaded GPS values
+                            extracted.latitude = row.latitude;
+                            extracted.longitude = row.longitude;
+                            extracted.altitude = row.altitude;
+                            extracted.gps_flag = (row.latitude != null && row.longitude != null);
+
+                            // Recompute weather
+                            extracted.temperature_c = null;
+                            extracted.humidity = null;
+                            extracted.weather_desc = null;
+                            db.populateWeather(extracted);
+
+                            if (row.filename != null && !row.filename.isBlank()) {
+                                extracted.filename = row.filename;
+                            }
+
+                            // Set the elk count from inference
+                            extracted.elk_count = elkCount;
+
+                            if (extracted.sha256 != null && row.sha256 != null
+                                    && !row.sha256.equals(ImgHash.sha256(tempFile.toFile()))) {
+                                throw new IllegalStateException("Downloaded file hash does not match DB hash");
+                            }
+
+                            int updatedRows = db.updateProcessedMetadata(conn, row.sha256, extracted);
+                            if (updatedRows == 1) {
+                                processedCount++;
+                            } else {
+                                errors.add("No row updated for hash=" + row.sha256);
+                            }
+                        } catch (Exception e) {
+                            errors.add("hash=" + row.sha256 + " failed to process: " + e.getMessage());
+                        } finally {
+                            if (tempFile != null) {
+                                try {
+                                    Files.deleteIfExists(tempFile);
+                                } catch (Exception ignored) {
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    errors.add("Inference service failed: " + e.getMessage());
+                }
+            }
+
+            return new BatchResult(pending.size(), processedCount, errors);
+
+        } catch (Exception e) {
+            errors.add("Batch failed: " + e.getMessage());
+            return new BatchResult(0, 0, errors);
+        } finally {
+            // Clean up temporary files
+            for (Path tempFile : tempFiles) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     public static String extractDateTime(File imageFile) {
@@ -190,7 +323,9 @@ public class FileProcessor {
             }
         }
 
-        BatchResult result = processUnprocessedBatch(batchSize);
+        RestClient.Builder builder = RestClient.builder();
+        ImgInference imgInference = new ImgInference(builder);
+        BatchResult result = processUnprocessedBatchWithInference(imgInference, batchSize);
         System.out.println("attempted=" + result.attempted + ", processed=" + result.processed);
         if (!result.errors.isEmpty()) {
             for (String error : result.errors) {

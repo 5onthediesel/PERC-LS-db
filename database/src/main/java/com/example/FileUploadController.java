@@ -89,6 +89,7 @@ public class FileUploadController {
             s.execute("alter table images add column if not exists temperature_c double precision");
             s.execute("alter table images add column if not exists humidity double precision");
             s.execute("alter table images add column if not exists weather_desc text");
+            s.execute("alter table images add column if not exists elk_count integer");
         }
     }
 
@@ -165,6 +166,7 @@ public class FileUploadController {
                         meta.temperature_c = 0.0;
                         meta.humidity = 0.0;
                         meta.weather_desc = null;
+                        meta.elk_count = null;
 
                         String objectName = meta.sha256 + dotExt;
 
@@ -329,5 +331,8 @@ public class FileUploadController {
         // Weather information
         fileInfo.put("temperatureC", meta.temperature_c);
         fileInfo.put("humidity", meta.humidity);
+
+        // Inference information
+        fileInfo.put("elkCount", meta.elk_count);
     }
 }
