@@ -206,7 +206,11 @@ class db {
                         longitude double precision,
                         altitude double precision,
                         datetime_taken timestamptz,
-                        datetime_uploaded timestamptz default now()
+                        datetime_uploaded timestamptz default now(),
+
+                        -- Wildlife detection (populated by YOLO inference)
+                        -- null = not yet processed, 0 = processed but no elk found
+                        elk_count int
                     )
                 """);
     }
@@ -214,9 +218,9 @@ class db {
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
         String sql = "insert into images (" +
                 "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
-                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc) " +
+                "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc, elk_count) " +
                 "values (?, ?, ?, ?, ?, ?, to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS'), " +
-                "?, ?, ?, ?, ?, ?, ?)";
+                "?, ?, ?, ?, ?, ?, ?, ?)";
 
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setString(1, meta.sha256);
@@ -238,6 +242,7 @@ class db {
         ps.setInt(9, meta.width);
         ps.setInt(10, meta.height);
         ps.setLong(11, meta.filesize);
+
         if (meta.temperature_c != null) ps.setDouble(12, meta.temperature_c);
         else ps.setNull(12, Types.DOUBLE);
 
@@ -246,6 +251,11 @@ class db {
 
         if (meta.weather_desc != null) ps.setString(14, meta.weather_desc);
         else ps.setNull(14, Types.VARCHAR);
+
+        // elk_count: null until YOLO processes the image
+        if (meta.elk_count != null) ps.setInt(15, meta.elk_count);
+        else ps.setNull(15, Types.INTEGER);
+
         ps.executeUpdate();
     }
 
@@ -274,6 +284,10 @@ class db {
 
         meta.temperature_c = rs.getDouble("temperature_c");
         meta.humidity = rs.getDouble("humidity");
+
+        // elk_count: null if YOLO hasn't processed yet
+        int elkCount = rs.getInt("elk_count");
+        meta.elk_count = rs.wasNull() ? null : elkCount;
 
         return meta;
     }
