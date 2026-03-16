@@ -39,6 +39,12 @@
   </dependency>
 
   <dependency>
+    <groupId>com.google.cloud.sql</groupId>
+    <artifactId>postgres-socket-factory</artifactId>
+    <version>1.28.1</version>
+  </dependency>
+
+  <dependency>
     <groupId>org.apache.commons</groupId>
     <artifactId>commons-imaging</artifactId>
     <version>1.0-alpha3</version>

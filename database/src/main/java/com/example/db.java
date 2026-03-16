@@ -17,24 +17,66 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
 class db {
+
+    // static Connection connect() throws SQLException {
+
+    // String url = "jdbc:postgresql://localhost:5432/postgres";
+
+    // // BRIAN'S POSTGRES USER & PASS
+    // // String user = "postgres";
+    // // String pass = "rubiks";
+
+    // // VICTOR'S POSTGRES USER & PASS
+    // String user = "victorli";
+    // String pass = "rubix";
+
+    // // CARSON's POSTGRES USER & PASS
+    // // String user = "postgres";
+    // // String pass = "postgres";
+
+    // Connection conn = DriverManager.getConnection(url, user, pass);
+    // return conn;
+    // }
 
     static Connection connect() throws SQLException {
 
         String instanceConnectionName = "perc-490419:us-east1:perc";
         String dbName = "postgres";
 
-        String url =
-            "jdbc:postgresql:///" + dbName +
-            "?cloudSqlInstance=" + instanceConnectionName +
-            "&socketFactory=com.google.cloud.sql.postgres.SocketFactory";
+        String url = "jdbc:postgresql:///" + dbName;
 
         String user = "postgres";
         String pass = "G4m3c3n73r!";
 
-        return DriverManager.getConnection(url, user, pass);
+        String credentialsPath = new File("perc-490419-84c297ae2ab4.json").getAbsolutePath();
+
+        Properties props = new Properties();
+        props.setProperty("user", user);
+        props.setProperty("password", pass);
+        props.setProperty("socketFactory", "com.google.cloud.sql.postgres.SocketFactory");
+        props.setProperty("cloudSqlInstance", instanceConnectionName);
+        props.setProperty("credentialsPath", credentialsPath);
+
+        return DriverManager.getConnection(url, props);
     }
+
+    // static Connection connect() throws SQLException {
+
+    // String instanceConnectionName = "perc-490419:us-east1:perc";
+    // String dbName = "postgres";
+
+    // String url = "jdbc:postgresql://" + dbName +
+    // "?cloudSqlInstance=" + instanceConnectionName +
+    // "&socketFactory=com.google.cloud.sql.postgres.SocketFactory";
+
+    // String user = "postgres";
+    // String pass = "G4m3c3n73r!";
+
+    // return DriverManager.getConnection(url, user, pass);
+    // }
 
     static Metadata loadMetadata(File f) throws Exception {
         Metadata meta = new Metadata();
