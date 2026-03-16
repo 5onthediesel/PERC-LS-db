@@ -18,4 +18,6 @@ public class Metadata {
     public Double longitude;
     public Double altitude;
     public String datetime;
+    public Integer elk_count;
+    public boolean processed_status;
 }
