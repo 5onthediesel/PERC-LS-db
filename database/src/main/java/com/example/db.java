@@ -22,22 +22,18 @@ class db {
 
     static Connection connect() throws SQLException {
 
-        String url = "jdbc:postgresql://localhost:5432/postgres";
+        String instanceConnectionName = "perc-490419:us-east1:perc";
+        String dbName = "postgres";
 
-        // BRIAN'S POSTGRES USER & PASS
-        // String user = "postgres";
-        // String pass = "rubiks";
+        String url =
+            "jdbc:postgresql:///" + dbName +
+            "?cloudSqlInstance=" + instanceConnectionName +
+            "&socketFactory=com.google.cloud.sql.postgres.SocketFactory";
 
-        // VICTOR'S POSTGRES USER & PASS
-        // String user = "victorli";
-        // String pass = "rubix";
-
-        // CARSON's POSTGRES USER & PASS
         String user = "postgres";
-        String pass = "postgres";
+        String pass = "G4m3c3n73r!";
 
-        Connection conn = DriverManager.getConnection(url, user, pass);
-        return conn;
+        return DriverManager.getConnection(url, user, pass);
     }
 
     static Metadata loadMetadata(File f) throws Exception {
