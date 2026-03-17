@@ -1,9 +1,11 @@
 package com.example;
 
+import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
+import java.io.FileInputStream;
 import org.springframework.web.client.RestClient;
 
 import java.io.File;
@@ -306,7 +308,14 @@ public class FileProcessor {
         String bucket = withoutScheme.substring(0, slashIdx);
         String objectName = withoutScheme.substring(slashIdx + 1);
 
-        Storage storage = StorageOptions.getDefaultInstance().getService();
+        GoogleCredentials credentials = GoogleCredentials
+                .fromStream(new FileInputStream("/secrets/gcs/cs370perc.key.json"))
+                .createScoped("https://www.googleapis.com/auth/cloud-platform");
+        Storage storage = StorageOptions.newBuilder()
+                .setProjectId("cs370perc")
+                .setCredentials(credentials)
+                .build()
+                .getService();
         Blob blob = storage.get(BlobId.of(bucket, objectName));
         if (blob == null) {
             throw new IllegalStateException("Object not found: " + cloudUri);

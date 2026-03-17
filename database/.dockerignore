@@ -1,0 +1,4 @@
+cat > .dockerignore << EOF
+target/
+.DS_Store
+EOF
