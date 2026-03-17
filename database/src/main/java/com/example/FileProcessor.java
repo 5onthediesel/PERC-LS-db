@@ -308,8 +308,13 @@ public class FileProcessor {
         String bucket = withoutScheme.substring(0, slashIdx);
         String objectName = withoutScheme.substring(slashIdx + 1);
 
+        // DEPLOYMENT
+        // GoogleCredentials credentials = GoogleCredentials
+        // .fromStream(new FileInputStream("/secrets/gcs/cs370perc.key.json"))
+        // .createScoped("https://www.googleapis.com/auth/cloud-platform");
+        // LOCAL TESTING
         GoogleCredentials credentials = GoogleCredentials
-                .fromStream(new FileInputStream("/secrets/gcs/cs370perc.key.json"))
+                .fromStream(new FileInputStream("cs370perc.key.json"))
                 .createScoped("https://www.googleapis.com/auth/cloud-platform");
         Storage storage = StorageOptions.newBuilder()
                 .setProjectId("cs370perc")
