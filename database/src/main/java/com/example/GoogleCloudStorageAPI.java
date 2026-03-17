@@ -16,7 +16,11 @@ public class GoogleCloudStorageAPI {
 
     private static final String PROJECT_ID = "cs370perc";
     private static final String BUCKET_NAME = "cs370perc-bucket";
-    private static final String CREDENTIALS_PATH = "/secrets/gcs/cs370perc.key.json";
+    // DEPLOYMENT
+    // private static final String CREDENTIALS_PATH =
+    // "/secrets/gcs/cs370perc.key.json";
+    // LOCAL TESTING
+    private static final String CREDENTIALS_PATH = "cs370perc.key.json";
 
     private static Storage buildStorage() throws IOException {
         GoogleCredentials credentials = GoogleCredentials
