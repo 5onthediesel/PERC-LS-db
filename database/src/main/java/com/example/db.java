@@ -18,6 +18,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 class db {
 
@@ -40,27 +42,31 @@ class db {
     // Connection conn = DriverManager.getConnection(url, user, pass);
     // return conn;
     // }
+    private static final Logger logger = Logger.getLogger(db.class.getName());
 
     static Connection connect() throws SQLException {
-
         String instanceConnectionName = "perc-490419:us-east1:perc";
         String dbName = "postgres";
-
         String url = "jdbc:postgresql:///" + dbName;
 
-        String user = "postgres";
-        String pass = "G4m3c3n73r!";
-
-        String credentialsPath = new File("perc-490419-84c297ae2ab4.json").getAbsolutePath();
-
         Properties props = new Properties();
-        props.setProperty("user", user);
-        props.setProperty("password", pass);
+        props.setProperty("user", "postgres");
+        props.setProperty("password", "G4m3c3n73r!");
         props.setProperty("socketFactory", "com.google.cloud.sql.postgres.SocketFactory");
         props.setProperty("cloudSqlInstance", instanceConnectionName);
-        props.setProperty("credentialsPath", credentialsPath);
+        props.setProperty("cloudSqlAdminQuotaProject", "perc-490419");
 
-        return DriverManager.getConnection(url, props);
+        String credentialsPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
+        if (credentialsPath != null && !credentialsPath.isEmpty()) {
+            props.setProperty("cloudSqlGoogleCredentialsPath", credentialsPath);
+        }
+
+        try {
+            return DriverManager.getConnection(url, props);
+        } catch (SQLException e) {
+            logger.log(Level.SEVERE, "Failed to connect to Cloud SQL: " + e.getMessage(), e);
+            throw e; // re-throw so the calling endpoint can return a proper error response
+        }
     }
 
     // static Connection connect() throws SQLException {
@@ -68,14 +74,43 @@ class db {
     // String instanceConnectionName = "perc-490419:us-east1:perc";
     // String dbName = "postgres";
 
-    // String url = "jdbc:postgresql://" + dbName +
-    // "?cloudSqlInstance=" + instanceConnectionName +
-    // "&socketFactory=com.google.cloud.sql.postgres.SocketFactory";
+    // String url = "jdbc:postgresql:///" + dbName;
 
     // String user = "postgres";
     // String pass = "G4m3c3n73r!";
+    // String credentialsPath =
+    // "/Users/victorli/Documents/GitHub/cs370db/database/perc-490419-84c297ae2ab4.json";
 
-    // return DriverManager.getConnection(url, user, pass);
+    // Properties props = new Properties();
+    // props.setProperty("user", user);
+    // props.setProperty("password", pass);
+    // props.setProperty("socketFactory",
+    // "com.google.cloud.sql.postgres.SocketFactory");
+    // props.setProperty("cloudSqlInstance", instanceConnectionName);
+    // props.setProperty("cloudSqlGoogleCredentialsPath", credentialsPath);
+    // props.setProperty("cloudSqlAdminQuotaProject", "perc-490419");
+
+    // try {
+    // return DriverManager.getConnection(url, props);
+    // } catch (SQLException e) {
+    // StringBuilder detail = new StringBuilder();
+    // detail.append("Cloud SQL JDBC connect failed. ")
+    // .append("instance=").append(instanceConnectionName)
+    // .append(", adcPath=").append(credentialsPath)
+    // .append(", quotaProject=perc-490419");
+
+    // Throwable t = e;
+    // int depth = 0;
+    // while (t != null && depth < 8) {
+    // detail.append("\ncausedBy[").append(depth).append("] ")
+    // .append(t.getClass().getName()).append(": ")
+    // .append(t.getMessage());
+    // t = t.getCause();
+    // depth++;
+    // }
+
+    // throw new SQLException(detail.toString(), e);
+    // }
     // }
 
     static Metadata loadMetadata(File f) throws Exception {

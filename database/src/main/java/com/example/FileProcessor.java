@@ -309,7 +309,7 @@ public class FileProcessor {
         String objectName = withoutScheme.substring(slashIdx + 1);
 
         GoogleCredentials credentials = GoogleCredentials
-                .fromStream(new FileInputStream("cs370perc.key.json"))
+                .fromStream(new FileInputStream("/secrets/gcs/cs370perc.key.json"))
                 .createScoped("https://www.googleapis.com/auth/cloud-platform");
         Storage storage = StorageOptions.newBuilder()
                 .setProjectId("cs370perc")
