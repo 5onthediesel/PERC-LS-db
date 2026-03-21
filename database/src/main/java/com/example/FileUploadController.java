@@ -91,6 +91,7 @@ public class FileUploadController {
             s.execute("alter table images add column if not exists humidity double precision");
             s.execute("alter table images add column if not exists weather_desc text");
             s.execute("alter table images add column if not exists elk_count integer");
+            s.execute("alter table images add column if not exists processed_status boolean default false");
         }
     }
 

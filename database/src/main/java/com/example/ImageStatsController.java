@@ -54,14 +54,17 @@ public class ImageStatsController {
                 s.execute("set search_path to cs370");
             }
 
-            // Uploads by date
-            String dateSql = "SELECT datetime_uploaded::date AS upload_date, COUNT(*) AS count " +
+            // Uploads by date — also include elk count per day
+            String dateSql = "SELECT datetime_uploaded::date AS upload_date, " +
+                             "COUNT(*) AS count, " +
+                             "SUM(CASE WHEN elk_count IS NOT NULL THEN elk_count ELSE 0 END) AS elk_total " +
                              "FROM cs370.images " +
                              "GROUP BY datetime_uploaded::date " +
                              "ORDER BY datetime_uploaded::date ASC";
 
             List<Map<String, Object>> uploadsByDate = new ArrayList<>();
             int total = 0;
+            int totalElk = 0;
 
             try (PreparedStatement ps = conn.prepareStatement(dateSql);
                  ResultSet rs = ps.executeQuery()) {
@@ -69,15 +72,17 @@ public class ImageStatsController {
                     Map<String, Object> row = new HashMap<>();
                     row.put("date", rs.getDate("upload_date").toString());
                     row.put("count", rs.getInt("count"));
+                    row.put("elkTotal", rs.getInt("elk_total"));
                     uploadsByDate.add(row);
                     total += rs.getInt("count");
+                    totalElk += rs.getInt("elk_total");
                 }
             }
 
             // GPS coverage stats
             String gpsSql = "SELECT " +
                             "COUNT(*) FILTER (WHERE gps_flag = true) AS with_gps, " +
-                            "COUNT(*) FILTER (WHERE gps_flag = false OR gps_flag IS NULL) AS without_gps " +
+                            "COUNT(*) FILTER (WHERE gps_flag IS DISTINCT FROM true) AS without_gps " +
                             "FROM cs370.images";
 
             int withGps = 0, withoutGps = 0;
@@ -89,11 +94,21 @@ public class ImageStatsController {
                 }
             }
 
+            // How many images have been processed by the model
+            String processedSql = "SELECT COUNT(*) AS processed FROM cs370.images WHERE processed_status = true";
+            int processedCount = 0;
+            try (PreparedStatement ps = conn.prepareStatement(processedSql);
+                 ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) processedCount = rs.getInt("processed");
+            }
+
             Map<String, Object> response = new HashMap<>();
             response.put("uploadsByDate", uploadsByDate);
             response.put("total", total);
             response.put("withGps", withGps);
             response.put("withoutGps", withoutGps);
+            response.put("totalElk", totalElk);
+            response.put("processedCount", processedCount);
 
             return ResponseEntity.ok(response);
 
