@@ -1,6 +1,5 @@
 package com.example;
 
-
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -16,6 +15,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -28,14 +28,36 @@ import org.springframework.web.multipart.MultipartFile;
 // mvn spring-boot:run
 @RestController
 @RequestMapping("/api")
-// @CrossOrigin(origins = "http://localhost:3000") // Switched to global cors config
+// @CrossOrigin(origins = "http://localhost:3000") // Switched to global cors
+// config
 public class FileUploadController {
 
-    private static class GpsUploadData {
+    private static class UploadMetadataData {
         public String filename;
         public Double longitude;
         public Double latitude;
         public Double altitude;
+        public Double temperature_c;
+        public Double humidity;
+        public String weather_desc;
+        public Integer width;
+        public Integer height;
+        public String datetime;
+
+        @JsonProperty("temp")
+        public void setTemp(Double value) {
+            this.temperature_c = value;
+        }
+
+        @JsonProperty("hum")
+        public void setHum(Double value) {
+            this.humidity = value;
+        }
+
+        @JsonProperty("weather")
+        public void setWeather(String value) {
+            this.weather_desc = value;
+        }
     }
 
     private static final String BUCKET_NAME = "cs370perc-bucket";
@@ -98,7 +120,7 @@ public class FileUploadController {
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> uploadFileUnprocessed(
             @RequestParam("files") MultipartFile[] files,
-            @RequestParam(value = "gpsData", required = false) String gpsDataJson) {
+            @RequestParam(value = "metadata", required = false) String metadataJson) {
         try {
             for (MultipartFile file : files) {
                 String originalName = file.getOriginalFilename();
@@ -108,14 +130,15 @@ public class FileUploadController {
                 }
             }
 
-            List<GpsUploadData> gpsDataList = List.of();
-            if (gpsDataJson != null && !gpsDataJson.isBlank()) {
-                ObjectMapper objectMapper = new ObjectMapper();
-                gpsDataList = objectMapper.readValue(gpsDataJson, new TypeReference<List<GpsUploadData>>() {
-                });
-                if (gpsDataList.size() != files.length) {
+            ObjectMapper objectMapper = new ObjectMapper();
+            List<UploadMetadataData> metadataList = List.of();
+            if (metadataJson != null && !metadataJson.isBlank()) {
+                metadataList = objectMapper.readValue(metadataJson,
+                        new TypeReference<List<UploadMetadataData>>() {
+                        });
+                if (metadataList.size() != files.length) {
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(Map.of("error", "gpsData length must match files length"));
+                            .body(Map.of("error", "metadata length must match files length"));
                 }
             }
 
@@ -128,7 +151,6 @@ public class FileUploadController {
                     String originalName = file.getOriginalFilename();
                     String suffix = (originalName == null || originalName.isBlank()) ? ".bin" : "-" + originalName;
                     Path tempFile = Files.createTempFile("upload-", suffix);
-
                     try {
                         Files.write(tempFile, file.getBytes());
 
@@ -142,18 +164,18 @@ public class FileUploadController {
                         meta.cloud_uri = "";
                         meta.processed_status = false;
 
-                        GpsUploadData gps = gpsDataList.isEmpty() ? null : gpsDataList.get(i);
-                        if (gps != null && gps.filename != null && originalName != null
-                                && !gps.filename.equals(originalName)) {
+                        UploadMetadataData uploadData = metadataList.isEmpty() ? null : metadataList.get(i);
+                        if (uploadData != null && uploadData.filename != null && originalName != null
+                                && !uploadData.filename.equals(originalName)) {
                             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                                     .body(Map.of("error",
-                                            "gpsData filename mismatch at index " + i + ": expected "
-                                                    + originalName + " but got " + gps.filename));
+                                            "metadata filename mismatch at index " + i + ": expected "
+                                                    + originalName + " but got " + uploadData.filename));
                         }
-                        if (gps != null && gps.latitude != null && gps.longitude != null) {
-                            meta.latitude = gps.latitude;
-                            meta.longitude = gps.longitude;
-                            meta.altitude = gps.altitude;
+                        if (uploadData != null && uploadData.latitude != null && uploadData.longitude != null) {
+                            meta.latitude = uploadData.latitude;
+                            meta.longitude = uploadData.longitude;
+                            meta.altitude = uploadData.altitude;
                             meta.gps_flag = true;
                         } else {
                             meta.latitude = null;
@@ -162,20 +184,19 @@ public class FileUploadController {
                             meta.gps_flag = false;
                         }
 
-                        meta.datetime = null;
-                        meta.width = 0;
-                        meta.height = 0;
-                        meta.temperature_c = 0.0;
-                        meta.humidity = 0.0;
-                        meta.weather_desc = null;
+                        meta.datetime = uploadData == null ? null : uploadData.datetime;
+                        meta.width = (uploadData == null || uploadData.width == null) ? 0 : uploadData.width;
+                        meta.height = (uploadData == null || uploadData.height == null) ? 0 : uploadData.height;
+                        meta.temperature_c = (uploadData == null || uploadData.temperature_c == null) ? 0.0
+                                : uploadData.temperature_c;
+                        meta.humidity = (uploadData == null || uploadData.humidity == null) ? 0.0 : uploadData.humidity;
+                        meta.weather_desc = uploadData == null ? null : uploadData.weather_desc;
                         meta.elk_count = null;
 
                         String objectName = meta.sha256 + dotExt;
 
                         Metadata existing = db.getImageByHash(conn, meta.sha256);
                         if (existing != null) {
-                            System.out.println("Duplicate image hash detected; skipping upload. hash=" + meta.sha256
-                                    + ", originalName=" + originalName);
                             Map<String, Object> fileInfo = new HashMap<>();
                             fileInfo.put("originalName", originalName);
                             fileInfo.put("status", "duplicate hash; skipped upload");
@@ -187,7 +208,6 @@ public class FileUploadController {
                             continue;
                         }
 
-                        // Upload original file without converting file type
                         GoogleCloudStorageAPI.uploadFile(tempFile.toString(), objectName);
                         meta.cloud_uri = "gs://" + BUCKET_NAME + "/" + objectName;
                         db.insertMeta(conn, meta);
