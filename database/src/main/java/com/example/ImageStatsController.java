@@ -120,7 +120,7 @@ public class ImageStatsController {
 
     /**
      * Returns all images that have GPS coordinates.
-     * Used by the frontend Dashboard map to plot observation locations.
+     * Used by the frontend Dashboard page to plot observation locations on the map.
      *
      * Response format:
      * {
@@ -139,12 +139,13 @@ public class ImageStatsController {
                 s.execute("set search_path to cs370");
             }
 
-            String sql = "SELECT filename, latitude, longitude, altitude, datetime_taken " +
-                         "FROM cs370.images " +
-                         "WHERE gps_flag = true " +
-                         "AND latitude IS NOT NULL " +
-                         "AND longitude IS NOT NULL " +
-                         "ORDER BY datetime_taken DESC";
+            String sql = "SELECT filename, latitude, longitude, altitude, datetime_taken, elk_count " +
+                        "FROM cs370.images " +
+                        "WHERE gps_flag = true " +
+                        "AND latitude IS NOT NULL " +
+                        "AND longitude IS NOT NULL " +
+                        "AND elk_count > 0 " +
+                        "ORDER BY datetime_taken DESC";
 
             List<Map<String, Object>> locations = new ArrayList<>();
 
@@ -159,6 +160,7 @@ public class ImageStatsController {
                     loc.put("altitude", rs.wasNull() ? null : alt);
                     var ts = rs.getTimestamp("datetime_taken");
                     loc.put("datetimeTaken", ts != null ? ts.toString() : null);
+                    loc.put("elkCount", rs.getObject("elk_count"));
                     locations.add(loc);
                 }
             }
