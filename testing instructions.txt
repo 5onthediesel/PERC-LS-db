@@ -5,3 +5,27 @@ gcloud auth login `ACCOUNT`
 gcloud config set project cs370perc
 mvn -e clean compile 
 mvn -e -DskipTests exec:java -Dexec.mainClass="com.example.App"
+
+=============================================================
+LOCAL TESTING 
+=============================================================
+set twilio when info received:
+export TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export TWILIO_AUTH_TOKEN=your_auth_token
+export TWILIO_PHONE_NUMBER=+1xxxxxxxxxx
+
+set gcloud:
+set GOOGLE_APPLICATION_CREDENTIALS=your\path\to\perc-490419-84c297ae2ab4.json
+
+
+=============================================================
+DEPLOYMENT
+=============================================================
+run this:  
+--set-env-vars TWILIO_ACCOUNT_SID=ACxxx,TWILIO_AUTH_TOKEN=xxx,TWILIO_PHONE_NUMBER=+1xxx
+OR
+store them in GCP Secret Manager first and reference them the same way as `cloud-sql-key`. 
+
+Then on the Twilio side, once number is approved, go into the Twilio console, find number, and set webhook URL for incoming messages to:
+
+https://your-cloud-run-url/sms
