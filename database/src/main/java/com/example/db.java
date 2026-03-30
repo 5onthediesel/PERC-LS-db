@@ -22,41 +22,28 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 class db {
-
-    // static Connection connect() throws SQLException {
-
-    // String url = "jdbc:postgresql://localhost:5432/postgres";
-
-    // // BRIAN'S POSTGRES USER & PASS
-    // // String user = "postgres";
-    // // String pass = "rubiks";
-
-    // // VICTOR'S POSTGRES USER & PASS
-    // String user = "victorli";
-    // String pass = "rubix";
-
-    // // CARSON's POSTGRES USER & PASS
-    // // String user = "postgres";
-    // // String pass = "postgres";
-
-    // Connection conn = DriverManager.getConnection(url, user, pass);
-    // return conn;
-    // }
     private static final Logger logger = Logger.getLogger(db.class.getName());
 
     static Connection connect() throws SQLException {
-        String instanceConnectionName = "perc-490419:us-east1:perc";
-        String dbName = "postgres";
+        String instanceConnectionName = SecretConfig.getRequired("CLOUD_SQL_INSTANCE");
+        String dbName = SecretConfig.getRequired("CLOUD_SQL_DB_NAME");
         String url = "jdbc:postgresql:///" + dbName;
 
         Properties props = new Properties();
-        props.setProperty("user", "postgres");
-        props.setProperty("password", "G4m3c3n73r!");
+        props.setProperty("user", SecretConfig.getRequired("DB_USER"));
+
+        String dbPassword = SecretConfig.get("DB_PASSWORD");
+        if (dbPassword == null) {
+            throw new SQLException(
+                    "Missing DB_PASSWORD secret. Provide it via environment variables or APP_SECRETS_PATH JSON.");
+        }
+        props.setProperty("password", dbPassword);
+
         props.setProperty("socketFactory", "com.google.cloud.sql.postgres.SocketFactory");
         props.setProperty("cloudSqlInstance", instanceConnectionName);
-        props.setProperty("cloudSqlAdminQuotaProject", "perc-490419");
+        props.setProperty("cloudSqlAdminQuotaProject", SecretConfig.getRequired("CLOUD_SQL_QUOTA_PROJECT"));
 
-        String credentialsPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
+        String credentialsPath = SecretConfig.getRequired("CLOUD_SQL_CREDENTIALS_PATH");
         if (credentialsPath != null && !credentialsPath.isEmpty()) {
             props.setProperty("cloudSqlGoogleCredentialsPath", credentialsPath);
         }
@@ -68,50 +55,6 @@ class db {
             throw e; // re-throw so the calling endpoint can return a proper error response
         }
     }
-
-    // static Connection connect() throws SQLException {
-
-    // String instanceConnectionName = "perc-490419:us-east1:perc";
-    // String dbName = "postgres";
-
-    // String url = "jdbc:postgresql:///" + dbName;
-
-    // String user = "postgres";
-    // String pass = "G4m3c3n73r!";
-    // String credentialsPath =
-    // "/Users/victorli/Documents/GitHub/cs370db/database/perc-490419-84c297ae2ab4.json";
-
-    // Properties props = new Properties();
-    // props.setProperty("user", user);
-    // props.setProperty("password", pass);
-    // props.setProperty("socketFactory",
-    // "com.google.cloud.sql.postgres.SocketFactory");
-    // props.setProperty("cloudSqlInstance", instanceConnectionName);
-    // props.setProperty("cloudSqlGoogleCredentialsPath", credentialsPath);
-    // props.setProperty("cloudSqlAdminQuotaProject", "perc-490419");
-
-    // try {
-    // return DriverManager.getConnection(url, props);
-    // } catch (SQLException e) {
-    // StringBuilder detail = new StringBuilder();
-    // detail.append("Cloud SQL JDBC connect failed. ")
-    // .append("instance=").append(instanceConnectionName)
-    // .append(", adcPath=").append(credentialsPath)
-    // .append(", quotaProject=perc-490419");
-
-    // Throwable t = e;
-    // int depth = 0;
-    // while (t != null && depth < 8) {
-    // detail.append("\ncausedBy[").append(depth).append("] ")
-    // .append(t.getClass().getName()).append(": ")
-    // .append(t.getMessage());
-    // t = t.getCause();
-    // depth++;
-    // }
-
-    // throw new SQLException(detail.toString(), e);
-    // }
-    // }
 
     static Metadata loadMetadata(File f) throws Exception {
         Metadata meta = new Metadata();

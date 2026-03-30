@@ -11,6 +11,7 @@ import org.springframework.web.client.RestClient;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
@@ -308,19 +309,17 @@ public class FileProcessor {
         String bucket = withoutScheme.substring(0, slashIdx);
         String objectName = withoutScheme.substring(slashIdx + 1);
 
-        // DEPLOYMENT
-        // GoogleCredentials credentials = GoogleCredentials
-        // .fromStream(new FileInputStream("/secrets/gcs/cs370perc.key.json"))
-        // .createScoped("https://www.googleapis.com/auth/cloud-platform");
-        // LOCAL TESTING
-        GoogleCredentials credentials = GoogleCredentials
-                .fromStream(new FileInputStream("cs370perc.key.json"))
-                .createScoped("https://www.googleapis.com/auth/cloud-platform");
-        Storage storage = StorageOptions.newBuilder()
-                .setProjectId("cs370perc")
-                .setCredentials(credentials)
-                .build()
-                .getService();
+        String projectId = SecretConfig.getRequired("GCS_PROJECT_ID");
+        String credentialsPath = SecretConfig.getRequired("GCS_CREDENTIALS_PATH");
+
+        StorageOptions.Builder storageBuilder = StorageOptions.newBuilder().setProjectId(projectId);
+        if (credentialsPath != null && Files.exists(Paths.get(credentialsPath))) {
+            GoogleCredentials credentials = GoogleCredentials
+                    .fromStream(new FileInputStream(credentialsPath))
+                    .createScoped("https://www.googleapis.com/auth/cloud-platform");
+            storageBuilder.setCredentials(credentials);
+        }
+        Storage storage = storageBuilder.build().getService();
         Blob blob = storage.get(BlobId.of(bucket, objectName));
         if (blob == null) {
             throw new IllegalStateException("Object not found: " + cloudUri);

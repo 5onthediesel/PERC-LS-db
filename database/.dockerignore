@@ -1,4 +1,9 @@
-cat > .dockerignore << EOF
 target/
 .DS_Store
-EOF
+.git/
+.gitignore
+*.md
+secrets/
+node_modules/
+.mvn/
+.idea/
