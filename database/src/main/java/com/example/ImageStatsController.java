@@ -144,7 +144,6 @@ public class ImageStatsController {
                         "WHERE gps_flag = true " +
                         "AND latitude IS NOT NULL " +
                         "AND longitude IS NOT NULL " +
-                        "AND elk_count > 0 " +
                         "ORDER BY datetime_taken DESC";
 
             List<Map<String, Object>> locations = new ArrayList<>();
