@@ -9,28 +9,28 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class GoogleCloudStorageAPI {
 
-    private static final String PROJECT_ID = "cs370perc";
-    private static final String BUCKET_NAME = "cs370perc-bucket";
-    // DEPLOYMENT
-    // private static final String CREDENTIALS_PATH =
-    // "/secrets/gcs/cs370perc.key.json";
-    // LOCAL TESTING
-    private static final String CREDENTIALS_PATH = "cs370perc.key.json";
+    private static final String PROJECT_ID = SecretConfig.getRequired("GCS_PROJECT_ID");
+    private static final String BUCKET_NAME = SecretConfig.getRequired("GCS_BUCKET_NAME");
 
     private static Storage buildStorage() throws IOException {
-        GoogleCredentials credentials = GoogleCredentials
-                .fromStream(new FileInputStream(CREDENTIALS_PATH))
-                .createScoped("https://www.googleapis.com/auth/cloud-platform");
-        return StorageOptions.newBuilder()
-                .setProjectId(PROJECT_ID)
-                .setCredentials(credentials)
-                .build()
-                .getService();
+        StorageOptions.Builder builder = StorageOptions.newBuilder().setProjectId(PROJECT_ID);
+
+        String credentialsPath = SecretConfig.getRequired("GCS_CREDENTIALS_PATH");
+
+        if (credentialsPath != null && Files.exists(Path.of(credentialsPath))) {
+            GoogleCredentials credentials = GoogleCredentials
+                    .fromStream(new FileInputStream(credentialsPath))
+                    .createScoped("https://www.googleapis.com/auth/cloud-platform");
+            builder.setCredentials(credentials);
+        }
+
+        return builder.build().getService();
     }
 
     public static void main(String[] args) throws IOException {

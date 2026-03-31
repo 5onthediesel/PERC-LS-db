@@ -24,6 +24,16 @@
     <groupId>com.twilio.sdk</groupId>
     <artifactId>twilio</artifactId>
     <version>10.1.1</version>
+    <exclusions>
+      <exclusion>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+      </exclusion>
+      <exclusion>
+        <groupId>commons-logging</groupId>
+        <artifactId>commons-logging</artifactId>
+      </exclusion>
+    </exclusions>
   </dependency>
 
   <dependency>

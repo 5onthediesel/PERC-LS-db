@@ -246,93 +246,99 @@ public class FileUploadController {
         }
     }
 
-    @PostMapping(value = "/upload/instant", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> uploadFileInstantProcessing(@RequestParam("files") MultipartFile[] files) {
-        try {
-            for (MultipartFile file : files) {
-                String originalName = file.getOriginalFilename();
-                if (!isAllowedImageName(originalName)) {
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(Map.of("error", "Files must be images (png, jpeg, jpg, or heic)"));
-                }
-            }
+    // @PostMapping(value = "/upload/instant", consumes =
+    // MediaType.MULTIPART_FORM_DATA_VALUE)
+    // public ResponseEntity<?> uploadFileInstantProcessing(@RequestParam("files")
+    // MultipartFile[] files) {
+    // try {
+    // for (MultipartFile file : files) {
+    // String originalName = file.getOriginalFilename();
+    // if (!isAllowedImageName(originalName)) {
+    // return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+    // .body(Map.of("error", "Files must be images (png, jpeg, jpg, or heic)"));
+    // }
+    // }
 
-            List<Map<String, Object>> uploadedFiles = new ArrayList<>();
-            try (Connection conn = db.connect()) {
-                ensureSchema(conn);
+    // List<Map<String, Object>> uploadedFiles = new ArrayList<>();
+    // try (Connection conn = db.connect()) {
+    // ensureSchema(conn);
 
-                for (MultipartFile file : files) {
-                    String originalName = file.getOriginalFilename();
-                    String suffix = (originalName == null || originalName.isBlank()) ? ".bin" : "-" + originalName;
-                    Path tempFile = Files.createTempFile("upload-", suffix);
-                    File jpgFile = null;
-                    try {
-                        Files.write(tempFile, file.getBytes());
+    // for (MultipartFile file : files) {
+    // String originalName = file.getOriginalFilename();
+    // String suffix = (originalName == null || originalName.isBlank()) ? ".bin" :
+    // "-" + originalName;
+    // Path tempFile = Files.createTempFile("upload-", suffix);
+    // File jpgFile = null;
+    // try {
+    // Files.write(tempFile, file.getBytes());
 
-                        String ext = ImgDet.getExtension(originalName == null ? "" : originalName).toLowerCase();
-                        if (ext.equals("png")) {
-                            jpgFile = ImgDet.convertPngToJpg(tempFile.toFile());
-                        } else {
-                            jpgFile = ImgDet.convertToJpg(tempFile.toFile());
-                        }
-                        Metadata meta = db.loadMetadata(jpgFile);
-                        String objectName = meta.sha256 + ".jpg";
+    // String ext = ImgDet.getExtension(originalName == null ? "" :
+    // originalName).toLowerCase();
+    // if (ext.equals("png")) {
+    // jpgFile = ImgDet.convertPngToJpg(tempFile.toFile());
+    // } else {
+    // jpgFile = ImgDet.convertToJpg(tempFile.toFile());
+    // }
+    // Metadata meta = db.loadMetadata(jpgFile);
+    // String objectName = meta.sha256 + ".jpg";
 
-                        Metadata existing = db.getImageByHash(conn, meta.sha256);
-                        if (existing != null) {
-                            System.out.println("Duplicate image hash detected; skipping upload. hash=" + meta.sha256
-                                    + ", originalName=" + originalName);
-                            Map<String, Object> fileInfo = new HashMap<>();
-                            fileInfo.put("originalName", originalName);
-                            fileInfo.put("status", "duplicate hash; skipped upload");
-                            fileInfo.put("objectName", objectName);
-                            fileInfo.put("sha256", existing.sha256);
-                            fileInfo.put("cloudUri", existing.cloud_uri);
-                            addMetadataToFileInfo(fileInfo, existing);
-                            uploadedFiles.add(fileInfo);
-                            continue;
-                        }
+    // Metadata existing = db.getImageByHash(conn, meta.sha256);
+    // if (existing != null) {
+    // System.out.println("Duplicate image hash detected; skipping upload. hash=" +
+    // meta.sha256
+    // + ", originalName=" + originalName);
+    // Map<String, Object> fileInfo = new HashMap<>();
+    // fileInfo.put("originalName", originalName);
+    // fileInfo.put("status", "duplicate hash; skipped upload");
+    // fileInfo.put("objectName", objectName);
+    // fileInfo.put("sha256", existing.sha256);
+    // fileInfo.put("cloudUri", existing.cloud_uri);
+    // addMetadataToFileInfo(fileInfo, existing);
+    // uploadedFiles.add(fileInfo);
+    // continue;
+    // }
 
-                        // upload to GCS and insert metadata into DB
-                        GoogleCloudStorageAPI.uploadFile(jpgFile.getAbsolutePath(), objectName);
-                        meta.cloud_uri = "gs://" + BUCKET_NAME + "/" + objectName;
-                        db.insertMeta(conn, meta);
+    // // upload to GCS and insert metadata into DB
+    // GoogleCloudStorageAPI.uploadFile(jpgFile.getAbsolutePath(), objectName);
+    // meta.cloud_uri = "gs://" + BUCKET_NAME + "/" + objectName;
+    // db.insertMeta(conn, meta);
 
-                        Map<String, Object> fileInfo = new HashMap<>();
-                        fileInfo.put("originalName", originalName);
-                        fileInfo.put("objectName", objectName);
-                        fileInfo.put("cloudUri", meta.cloud_uri);
-                        fileInfo.put("sha256", meta.sha256);
-                        addMetadataToFileInfo(fileInfo, meta);
-                        uploadedFiles.add(fileInfo);
-                    } catch (SQLException e) {
-                        if ("23505".equals(e.getSQLState())) {
-                            Map<String, Object> fileInfo = new HashMap<>();
-                            fileInfo.put("originalName", originalName);
-                            fileInfo.put("error", "Duplicate image hash; skipping DB insert");
-                            uploadedFiles.add(fileInfo);
-                        } else {
-                            throw e;
-                        }
-                    } finally {
-                        if (jpgFile != null && !jpgFile.equals(tempFile.toFile())) {
-                            Files.deleteIfExists(jpgFile.toPath());
-                        }
-                        Files.deleteIfExists(tempFile);
-                    }
-                }
-            }
+    // Map<String, Object> fileInfo = new HashMap<>();
+    // fileInfo.put("originalName", originalName);
+    // fileInfo.put("objectName", objectName);
+    // fileInfo.put("cloudUri", meta.cloud_uri);
+    // fileInfo.put("sha256", meta.sha256);
+    // addMetadataToFileInfo(fileInfo, meta);
+    // uploadedFiles.add(fileInfo);
+    // } catch (SQLException e) {
+    // if ("23505".equals(e.getSQLState())) {
+    // Map<String, Object> fileInfo = new HashMap<>();
+    // fileInfo.put("originalName", originalName);
+    // fileInfo.put("error", "Duplicate image hash; skipping DB insert");
+    // uploadedFiles.add(fileInfo);
+    // } else {
+    // throw e;
+    // }
+    // } finally {
+    // if (jpgFile != null && !jpgFile.equals(tempFile.toFile())) {
+    // Files.deleteIfExists(jpgFile.toPath());
+    // }
+    // Files.deleteIfExists(tempFile);
+    // }
+    // }
+    // }
 
-            return ResponseEntity
-                    .ok(Map.of("message", "Files uploaded successfully (instant processing)", "files", uploadedFiles));
-        } catch (Exception e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
-            System.err.println(sw.toString());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", e.getMessage(), "stackTrace", sw.toString()));
-        }
-    }
+    // return ResponseEntity
+    // .ok(Map.of("message", "Files uploaded successfully (instant processing)",
+    // "files", uploadedFiles));
+    // } catch (Exception e) {
+    // StringWriter sw = new StringWriter();
+    // e.printStackTrace(new PrintWriter(sw));
+    // System.err.println(sw.toString());
+    // return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+    // .body(Map.of("error", e.getMessage(), "stackTrace", sw.toString()));
+    // }
+    // }
 
     private static void addMetadataToFileInfo(Map<String, Object> fileInfo, Metadata meta) {
         // File information
