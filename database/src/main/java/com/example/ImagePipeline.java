@@ -1,7 +1,5 @@
 package com.example;
 
-import org.springframework.web.multipart.MultipartFile;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -9,6 +7,8 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+
+import org.springframework.web.multipart.MultipartFile;
 
 public class ImagePipeline {
 
@@ -102,7 +102,11 @@ public class ImagePipeline {
             if (meta.gps_flag) {
                 ps.setDouble(4, meta.latitude);
                 ps.setDouble(5, meta.longitude);
-                ps.setDouble(6, meta.altitude);
+                if (meta.altitude != null) {
+                    ps.setDouble(6, meta.altitude);
+                } else {
+                    ps.setNull(6, java.sql.Types.DOUBLE);
+                }
             } else {
                 ps.setNull(4, java.sql.Types.DOUBLE);
                 ps.setNull(5, java.sql.Types.DOUBLE);
@@ -115,18 +119,8 @@ public class ImagePipeline {
             ps.setInt(10, meta.height);
             ps.setLong(11, meta.filesize);
             
-            if (meta.temperature_c != null) {
-                ps.setDouble(12, meta.temperature_c);
-            } else {
-                ps.setNull(12, java.sql.Types.DOUBLE);
-            }
-            
-            if (meta.humidity != null) {
-                ps.setDouble(13, meta.humidity);
-            } else {
-                ps.setNull(13, java.sql.Types.DOUBLE);
-            }
-            
+            ps.setObject(12, meta.temperature_c, java.sql.Types.DOUBLE);
+            ps.setObject(13, meta.humidity, java.sql.Types.DOUBLE);
             ps.setString(14, meta.weather_desc);
             ps.executeUpdate();
         }
