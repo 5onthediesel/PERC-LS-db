@@ -4,11 +4,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-public class InferenceScheduler {
+public class EventScheduler {
 
     private final ImgInference imgInference;
 
-    public InferenceScheduler(ImgInference imgInference) {
+    public EventScheduler(ImgInference imgInference) {
         this.imgInference = imgInference;
     }
 
@@ -30,5 +30,13 @@ public class InferenceScheduler {
                 System.err.println("[Scheduler] Error: " + error);
             }
         }
+    }
+    /*
+     * Polls Gmail inbox every hour for new image submissions from landowners.
+     * TODO: Replace with SendGrid Inbound Parse webhook when PERC provides a domain.
+    */
+    @Scheduled(fixedDelay = 3600000) 
+    public void pollEmailInbox() {
+        EmailProcessor.pollAndProcess();
     }
 }

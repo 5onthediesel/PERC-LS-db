@@ -1,0 +1,14 @@
+Step 1 — Enable Gmail API:
+
+Go to console.cloud.google.com
+Select project cs370perc
+Go to APIs & Services → Enable APIs
+Search for Gmail API and enable it
+
+Step 2 — Create OAuth credentials:
+
+Go to APIs & Services → Credentials
+Click Create Credentials → OAuth client ID
+Application type: Desktop app
+Download the JSON file — rename it gmail-credentials.json
+Drop it in database/secrets/
