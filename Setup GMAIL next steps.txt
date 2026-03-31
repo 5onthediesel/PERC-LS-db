@@ -1,14 +1,31 @@
-Step 1 — Enable Gmail API:
+Step 1 Enable Gmail API:
+    Go to console.cloud.google.com
+    Select project cs370perc
+    Go to APIs & Services → Enable APIs
+    Search for Gmail API and enable it
 
-Go to console.cloud.google.com
-Select project cs370perc
-Go to APIs & Services → Enable APIs
-Search for Gmail API and enable it
+Step 2 Create OAuth credentials:
+    Go to APIs & Services → Credentials
+    Click Create Credentials → OAuth client ID
+    Application type: Desktop app
+    Download the JSON file — rename it gmail-credentials.json
+    Drop it in database/secrets/
 
-Step 2 — Create OAuth credentials:
+Step 3 Update local_testing_secrets.json with these three keys:
+  "GMAIL_CREDENTIALS_PATH": "./secrets/gmail-credentials.json",
+  "GMAIL_TOKEN_PATH": "./secrets/gmail-token",
+  "GMAIL_POLL_ADDRESS": "the.gmail.account@gmail.com"
 
-Go to APIs & Services → Credentials
-Click Create Credentials → OAuth client ID
-Application type: Desktop app
-Download the JSON file — rename it gmail-credentials.json
-Drop it in database/secrets/
+Step 4 First run note:
+  When the app starts for the first time after this setup, it will open 
+  a browser window asking to authorize Gmail access. Log in with the 
+  PERC Gmail account and grant access. It saves a token automatically 
+  and won't ask again after that.
+
+Step 5 For production (app-secrets.json):
+  Add the same three keys as Step 3 but with Cloud Run paths:
+  "GMAIL_CREDENTIALS_PATH": "/secrets/gmail-credentials/gmail-credentials.json"
+  "GMAIL_TOKEN_PATH": "/secrets/gmail-token"
+  "GMAIL_POLL_ADDRESS": "the.gmail.account@gmail.com"
+  And mount gmail-credentials.json as a secret in build_and_deploy.sh
+  the same way app-secrets.json is handled.
