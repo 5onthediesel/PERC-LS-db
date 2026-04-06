@@ -10,6 +10,7 @@ import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 import java.io.FileInputStream;
 
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -21,6 +22,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
 public class FileProcessor {
@@ -69,6 +73,55 @@ public class FileProcessor {
         }
     }
 
+    public static record ImagePayload(String filename, byte[] bytes) {
+    }
+
+    private static class PythonInferenceClient {
+        private final RestClient restClient;
+
+        PythonInferenceClient(RestClient.Builder builder) {
+            // Force HTTP/1.1 to avoid h2c upgrade issues with Uvicorn.
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .build();
+
+            JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+
+            this.restClient = builder
+                    .baseUrl("http://localhost:8000")
+                    .requestFactory(requestFactory)
+                    .build();
+        }
+
+        Integer inferCount(byte[] imageBytes) {
+            try {
+                String response = restClient.post()
+                        .uri("/infer")
+                        .contentType(MediaType.IMAGE_JPEG)
+                        .body(imageBytes)
+                        .retrieve()
+                        .body(String.class);
+
+                if (response == null || response.isBlank()) {
+                    return null;
+                }
+                return Integer.parseInt(response.trim());
+            } catch (Exception e) {
+                System.err.println("Inference failed: " + e.getMessage());
+                return null;
+            }
+        }
+
+        List<Integer> inferCounts(List<ImagePayload> images) {
+            List<Integer> counts = new ArrayList<>();
+            for (ImagePayload img : images) {
+                Integer count = inferCount(img.bytes());
+                counts.add(count);
+            }
+            return counts;
+        }
+    }
+
     public static List<Map<String, Object>> uploadAndProcessFiles(
             MultipartFile[] files,
             String metadataJson) throws Exception {
@@ -95,7 +148,7 @@ public class FileProcessor {
                 try {
                     Files.write(tempFile, file.getBytes());
 
-                    String ext = ImgDet.getExtension(originalName == null ? "" : originalName).toLowerCase();
+                    String ext = ImageUtils.getExtension(originalName == null ? "" : originalName).toLowerCase();
                     String dotExt = normalizedStorageExtension(ext);
                     UploadMetadataData uploadData = metadataList.isEmpty() ? null : metadataList.get(i);
 
@@ -178,8 +231,80 @@ public class FileProcessor {
     }
 
     public static BatchResult processUnprocessedBatch() {
-        // will add model inference later
         return processAllUnprocessedWithAnimalDetect();
+    }
+
+    /**
+     * Backlog processor that uses the custom Python model endpoint.
+     * Keep this separate from AnimalDetect flow so you can swap/iterate model
+     * behavior independently.
+     */
+    public static BatchResult processAllUnprocessedWithPythonInference() {
+        PythonInferenceClient inferenceClient = new PythonInferenceClient(RestClient.builder());
+
+        int processedCount = 0;
+        int attemptedCount = 0;
+        List<String> errors = new ArrayList<>();
+
+        try (Connection conn = db.connect()) {
+            List<Metadata> pending = db.getUnprocessedImages(conn, Integer.MAX_VALUE);
+            attemptedCount = pending.size();
+
+            List<ImagePayload> payloads = new ArrayList<>();
+            List<Metadata> rows = new ArrayList<>();
+            List<Path> tempFiles = new ArrayList<>();
+
+            for (Metadata row : pending) {
+                try {
+                    if (row.cloud_uri == null || row.cloud_uri.isBlank()) {
+                        throw new IllegalArgumentException("Missing cloud_uri");
+                    }
+
+                    String ext = ImageUtils.getExtension(row.cloud_uri).toLowerCase();
+                    Path tempFile = Files.createTempFile("processor-py-", "." + ext);
+                    downloadFromCloudUri(row.cloud_uri, tempFile);
+
+                    String computedHash = ImageUtils.sha256(tempFile.toFile());
+                    if (computedHash != null && row.sha256 != null && !row.sha256.equals(computedHash)) {
+                        throw new IllegalStateException("Downloaded file hash does not match DB hash");
+                    }
+
+                    String filename = (row.filename == null || row.filename.isBlank())
+                            ? row.sha256 + ".jpeg"
+                            : row.filename;
+
+                    payloads.add(new ImagePayload(filename, Files.readAllBytes(tempFile)));
+                    rows.add(row);
+                    tempFiles.add(tempFile);
+                } catch (Exception e) {
+                    errors.add("hash=" + row.sha256 + " failed to prepare: " + e.getMessage());
+                }
+            }
+
+            List<Integer> counts = inferenceClient.inferCounts(payloads);
+            for (int i = 0; i < rows.size(); i++) {
+                Metadata row = rows.get(i);
+                Integer elkCount = (i < counts.size()) ? counts.get(i) : null;
+                try {
+                    db.updateMetaWithDetection(conn, row.sha256, elkCount, true);
+                    processedCount++;
+                } catch (Exception e) {
+                    errors.add("hash=" + row.sha256 + " failed to persist: " + e.getMessage());
+                }
+            }
+
+            for (Path tempFile : tempFiles) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (Exception ignored) {
+                }
+            }
+
+            return new BatchResult(attemptedCount, processedCount, errors);
+        } catch (Exception e) {
+            errors.add("Batch failed: " + e.getMessage());
+            return new BatchResult(0, 0, errors);
+        }
     }
 
     private static void validateUploadedFiles(MultipartFile[] files) {
@@ -218,7 +343,7 @@ public class FileProcessor {
         Metadata meta = new Metadata();
         meta.filename = originalName;
         meta.filesize = Files.size(tempFile);
-        meta.sha256 = ImgHash.sha256(tempFile.toFile());
+        meta.sha256 = ImageUtils.sha256(tempFile.toFile());
         meta.cloud_uri = "";
         meta.processed_status = false;
         meta.elk_count = null;
@@ -318,11 +443,11 @@ public class FileProcessor {
                         throw new IllegalArgumentException("Missing cloud_uri");
                     }
 
-                    String ext = ImgDet.getExtension(row.cloud_uri).toLowerCase();
+                    String ext = ImageUtils.getExtension(row.cloud_uri).toLowerCase();
                     tempFile = Files.createTempFile("processor-", "." + ext);
                     downloadFromCloudUri(row.cloud_uri, tempFile);
 
-                    String computedHash = ImgHash.sha256(tempFile.toFile());
+                    String computedHash = ImageUtils.sha256(tempFile.toFile());
                     if (computedHash != null && row.sha256 != null && !row.sha256.equals(computedHash)) {
                         throw new IllegalStateException("Downloaded file hash does not match DB hash");
                     }

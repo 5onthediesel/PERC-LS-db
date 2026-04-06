@@ -114,14 +114,14 @@ class db {
 
     static Metadata loadMetadata(File f) throws Exception {
         Metadata meta = new Metadata();
-        EXIFParser.ExifData d;
-        String ext = ImgDet.getExtension(f.getName()).toLowerCase();
+        ImageUtils.ExifData d;
+        String ext = ImageUtils.getExtension(f.getName()).toLowerCase();
         if (ext.equals("png")) {
-            d = ImgDet.parseExifFromPng(f);
+            d = ImageUtils.parseExifFromPng(f);
             if (d == null)
-                d = new EXIFParser.ExifData();
+                d = new ImageUtils.ExifData();
         } else {
-            d = EXIFParser.parse(f.getAbsolutePath());
+            d = ImageUtils.parse(f.getAbsolutePath());
         }
 
         meta.filename = f.getName();
@@ -147,9 +147,9 @@ class db {
             meta.gps_flag = false;
         }
 
-        meta.sha256 = ImgHash.sha256(f);
-        meta.width = ImgDet.getWidth(f);
-        meta.height = ImgDet.getHeight(f);
+        meta.sha256 = ImageUtils.sha256(f);
+        meta.width = ImageUtils.getWidth(f);
+        meta.height = ImageUtils.getHeight(f);
         meta.cloud_uri = "";
         populateWeather(meta);
         meta.processed_status = true;
@@ -316,44 +316,52 @@ class db {
         return results;
     }
 
-    static int updateProcessedMetadata(Connection conn, String hash, Metadata meta) throws SQLException {
-        String sql = "UPDATE cs370.images SET " +
-                "filename = ?, " +
-                "filesize_bytes = ?, " +
-                "width = ?, " +
-                "height = ?, " +
-                "gps_flag = ?, " +
-                "latitude = ?, " +
-                "longitude = ?, " +
-                "altitude = ?, " +
-                "datetime_taken = CASE WHEN ? IS NULL THEN NULL " +
-                "ELSE to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS') END, " +
-                "temperature_c = ?, " +
-                "humidity = ?, " +
-                "weather_desc = ?, " +
-                "elk_count = ?, " +
-                "processed_status = true " +
-                "WHERE img_hash = ? AND processed_status = false";
-
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, meta.filename);
-            ps.setLong(2, meta.filesize);
-            ps.setInt(3, meta.width);
-            ps.setInt(4, meta.height);
-            ps.setBoolean(5, meta.gps_flag);
-            ps.setObject(6, meta.latitude, Types.DOUBLE);
-            ps.setObject(7, meta.longitude, Types.DOUBLE);
-            ps.setObject(8, meta.altitude, Types.DOUBLE);
-            ps.setString(9, meta.datetime);
-            ps.setString(10, meta.datetime);
-            ps.setObject(11, meta.temperature_c, Types.DOUBLE);
-            ps.setObject(12, meta.humidity, Types.DOUBLE);
-            ps.setString(13, meta.weather_desc);
-            ps.setObject(14, meta.elk_count, Types.INTEGER);
-            ps.setString(15, hash);
-            return ps.executeUpdate();
-        }
-    }
+    /*
+     * Legacy full metadata update method (unused).
+     * Current processing paths update only detection fields via
+     * updateMetaWithDetection.
+     *
+     * static int updateProcessedMetadata(Connection conn, String hash, Metadata
+     * meta)
+     * throws SQLException {
+     * String sql = "UPDATE cs370.images SET " +
+     * "filename = ?, " +
+     * "filesize_bytes = ?, " +
+     * "width = ?, " +
+     * "height = ?, " +
+     * "gps_flag = ?, " +
+     * "latitude = ?, " +
+     * "longitude = ?, " +
+     * "altitude = ?, " +
+     * "datetime_taken = CASE WHEN ? IS NULL THEN NULL " +
+     * "ELSE to_timestamp(?, 'YYYY-MM-DD HH24:MI:SS') END, " +
+     * "temperature_c = ?, " +
+     * "humidity = ?, " +
+     * "weather_desc = ?, " +
+     * "elk_count = ?, " +
+     * "processed_status = true " +
+     * "WHERE img_hash = ? AND processed_status = false";
+     *
+     * try (PreparedStatement ps = conn.prepareStatement(sql)) {
+     * ps.setString(1, meta.filename);
+     * ps.setLong(2, meta.filesize);
+     * ps.setInt(3, meta.width);
+     * ps.setInt(4, meta.height);
+     * ps.setBoolean(5, meta.gps_flag);
+     * ps.setObject(6, meta.latitude, Types.DOUBLE);
+     * ps.setObject(7, meta.longitude, Types.DOUBLE);
+     * ps.setObject(8, meta.altitude, Types.DOUBLE);
+     * ps.setString(9, meta.datetime);
+     * ps.setString(10, meta.datetime);
+     * ps.setObject(11, meta.temperature_c, Types.DOUBLE);
+     * ps.setObject(12, meta.humidity, Types.DOUBLE);
+     * ps.setString(13, meta.weather_desc);
+     * ps.setObject(14, meta.elk_count, Types.INTEGER);
+     * ps.setString(15, hash);
+     * return ps.executeUpdate();
+     * }
+     * }
+     */
 
     // Builds a Metadata object from a SQL ResultSet row
     private static Metadata buildMetadataFromResultSet(ResultSet rs) throws SQLException {
@@ -381,7 +389,6 @@ class db {
         meta.temperature_c = rs.getDouble("temperature_c");
         meta.humidity = rs.getDouble("humidity");
         meta.weather_desc = rs.getString("weather_desc");
-        meta.elk_count = (Integer) rs.getObject("elk_count");
         meta.processed_status = rs.getBoolean("processed_status");
 
         // elk_count: null if YOLO hasn't processed yet
@@ -475,61 +482,69 @@ class db {
         return results;
     }
 
-    // Retrieve the most recently uploaded images
-    static List<Metadata> getRecentImages(Connection conn, int limit) throws SQLException {
-        List<Metadata> results = new ArrayList<>();
-
-        String sql = "SELECT * FROM cs370.images " +
-                "WHERE processed_status = true " +
-                "ORDER BY datetime_uploaded DESC " +
-                "LIMIT ?";
-
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, limit);
-
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    results.add(buildMetadataFromResultSet(rs));
-                }
-            }
-        }
-
-        return results;
-    }
-
-    static void shipImgs(Metadata meta, Connection conn, List<File> jpgFiles) throws Exception {
-        for (File jpg : jpgFiles) {
-            try {
-                meta = loadMetadata(jpg);
-                insertMeta(conn, meta);
-
-            } catch (SQLException e) {
-                if (e.getSQLState().equals("23505")) {
-                    System.out.println("Duplicate image skipped: " + (meta != null ? meta.filename : jpg.getName()));
-                } else {
-                    throw e;
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    static List<File> prepareImages(File folder) {
-        List<File> jpgFiles = new ArrayList<>();
-
-        for (File f : folder.listFiles()) {
-            if (!f.isFile() || f.getName().startsWith("."))
-                continue;
-            try {
-                File fileToProcess = ImgDet.convertToJpg(f);
-                jpgFiles.add(fileToProcess);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-        return jpgFiles;
-    }
+    /*
+     * Legacy/manual-only helpers currently unused by runtime and tests.
+     *
+     * // Retrieve the most recently uploaded images
+     * static List<Metadata> getRecentImages(Connection conn, int limit) throws
+     * SQLException {
+     * List<Metadata> results = new ArrayList<>();
+     *
+     * String sql = "SELECT * FROM cs370.images " +
+     * "WHERE processed_status = true " +
+     * "ORDER BY datetime_uploaded DESC " +
+     * "LIMIT ?";
+     *
+     * try (PreparedStatement ps = conn.prepareStatement(sql)) {
+     * ps.setInt(1, limit);
+     *
+     * try (ResultSet rs = ps.executeQuery()) {
+     * while (rs.next()) {
+     * results.add(buildMetadataFromResultSet(rs));
+     * }
+     * }
+     * }
+     *
+     * return results;
+     * }
+     *
+     * static void shipImgs(Metadata meta, Connection conn, List<File> jpgFiles)
+     * throws Exception {
+     * for (File jpg : jpgFiles) {
+     * try {
+     * meta = loadMetadata(jpg);
+     * insertMeta(conn, meta);
+     *
+     * } catch (SQLException e) {
+     * if (e.getSQLState().equals("23505")) {
+     * System.out.println("Duplicate image skipped: " + (meta != null ?
+     * meta.filename :
+     * jpg.getName()));
+     * } else {
+     * throw e;
+     * }
+     * } catch (Exception e) {
+     * e.printStackTrace();
+     * }
+     * }
+     * }
+     *
+     * static List<File> prepareImages(File folder) {
+     * List<File> jpgFiles = new ArrayList<>();
+     *
+     * for (File f : folder.listFiles()) {
+     * if (!f.isFile() || f.getName().startsWith("."))
+     * continue;
+     * try {
+     * File fileToProcess = ImageUtils.convertToJpg(f);
+     * jpgFiles.add(fileToProcess);
+     * } catch (Exception e) {
+     * e.printStackTrace();
+     * }
+     * }
+     * return jpgFiles;
+     * }
+     */
 
     /**
      * Update image metadata with animal detection results (elk_count and
@@ -553,39 +568,18 @@ class db {
 
     /* -------------------------------------------------------------------------- */
 
-    public static void main(String[] args) throws Exception {
-        File folder = new File("images");
-        List<File> jpgs = prepareImages(folder);
-        Metadata meta = new Metadata();
-
-        try (Connection conn = connect()) {
-            setupSchema(conn);
-            shipImgs(meta, conn, jpgs);
-
-            // System.out.println("\n=== Testing Query Methods ===");
-            //
-            // // TEST: Get recent images
-            // List<Metadata> recent = getRecentImages(conn, 3);
-            // System.out.println("Recent images: " + recent.size());
-            // for (Metadata m : recent) {
-            // System.out.println(" - " + m.datetime);
-            // }
-
-            // // TEST: Get by date range
-            // List<Metadata> dated = getImagesByDateRange(conn, "2026-01-01",
-            // "2026-12-31");
-            // System.out.println("\nImages from 2026: " + dated.size());
-
-            // // TEST: Get & print imageas within 10km of first image
-            // if (!recent.isEmpty() && recent.get(0).gps_flag) {
-            // Metadata first = recent.get(0); // First image metadata
-            // List<Metadata> nearby = getImagesByLocation(conn, first.latitude,
-            // first.longitude, 10.0);
-            // System.out.println("\nImages within 10km: " + nearby.size());
-            // for (Metadata m : nearby) {
-            // System.out.println(" - " + m.filename);
-            // }
-            // }
-        }
-    }
+    /*
+     * Legacy manual runner (unused).
+     *
+     * public static void main(String[] args) throws Exception {
+     * File folder = new File("images");
+     * List<File> jpgs = prepareImages(folder);
+     * Metadata meta = new Metadata();
+     *
+     * try (Connection conn = connect()) {
+     * setupSchema(conn);
+     * shipImgs(meta, conn, jpgs);
+     * }
+     * }
+     */
 }

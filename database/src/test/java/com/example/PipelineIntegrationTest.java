@@ -51,7 +51,7 @@ public class PipelineIntegrationTest {
 
         try {
             System.out.println("[STEP 2] Convert HEIC copy -> JPG...");
-            jpg = ImgDet.convertToJpg(heicCopy);
+            jpg = ImageUtils.convertToJpg(heicCopy);
             assertNotNull(jpg, "convertToJpg returned null");
             assertTrue(jpg.exists() && jpg.isFile(), "JPG conversion output missing: " + jpg.getAbsolutePath());
             System.out.println("Converted JPG: " + jpg.getAbsolutePath());

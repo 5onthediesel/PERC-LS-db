@@ -8,10 +8,8 @@ public class EventScheduler {
 
     /*
      * Runs every Sunday at 2:00 AM.
-     * Pulls 16 unprocessed images from DB, sends to Python inference server,
-     * writes elk counts back to DB.
-     * Amount of images pulled can be changed in FileProcessor.java: [private static
-     * final int DEFAULT_BATCH_SIZE = 16]
+     * Pulls all unprocessed images from DB, runs AnimalDetect labeling,
+     * and writes elk counts back to DB.
      */
     @Scheduled(cron = "0 0 2 * * SUN")
     public void runWeeklyInferenceBatch() {

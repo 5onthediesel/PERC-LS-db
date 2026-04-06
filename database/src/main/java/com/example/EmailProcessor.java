@@ -33,7 +33,7 @@ public class EmailProcessor {
     private static final List<String> SCOPES = Collections.singletonList(GmailScopes.MAIL_GOOGLE_COM);
 
     private static final String[] ALLOWED_MIME_TYPES = {
-        "image/jpeg", "image/jpg", "image/png", "image/heic"
+            "image/jpeg", "image/jpg", "image/png", "image/heic"
     };
 
     /**
@@ -45,33 +45,30 @@ public class EmailProcessor {
         String tokenPath = SecretConfig.getRequired("GMAIL_TOKEN_PATH");
 
         GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(
-            JSON_FACTORY,
-            new FileReader(credentialsPath)
-        );
+                JSON_FACTORY,
+                new FileReader(credentialsPath));
 
         GoogleAuthorizationCodeFlow flow = new GoogleAuthorizationCodeFlow.Builder(
-            GoogleNetHttpTransport.newTrustedTransport(),
-            JSON_FACTORY,
-            clientSecrets,
-            SCOPES
-        )
-            .setDataStoreFactory(new FileDataStoreFactory(new File(tokenPath)))
-            .setAccessType("offline")
-            .build();
+                GoogleNetHttpTransport.newTrustedTransport(),
+                JSON_FACTORY,
+                clientSecrets,
+                SCOPES)
+                .setDataStoreFactory(new FileDataStoreFactory(new File(tokenPath)))
+                .setAccessType("offline")
+                .build();
 
         LocalServerReceiver receiver = new LocalServerReceiver.Builder()
-            .setPort(8888)
-            .build();
+                .setPort(8888)
+                .build();
 
         Credential credential = new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
 
         return new Gmail.Builder(
-            GoogleNetHttpTransport.newTrustedTransport(),
-            JSON_FACTORY,
-            credential
-        )
-            .setApplicationName(APPLICATION_NAME)
-            .build();
+                GoogleNetHttpTransport.newTrustedTransport(),
+                JSON_FACTORY,
+                credential)
+                .setApplicationName(APPLICATION_NAME)
+                .build();
     }
 
     /**
@@ -90,9 +87,9 @@ public class EmailProcessor {
 
             // Find unread emails with attachments
             ListMessagesResponse listResponse = gmail.users().messages()
-                .list(user)
-                .setQ("is:unread has:attachment")
-                .execute();
+                    .list(user)
+                    .setQ("is:unread has:attachment")
+                    .execute();
 
             List<Message> messages = listResponse.getMessages();
             if (messages == null || messages.isEmpty()) {
@@ -104,13 +101,14 @@ public class EmailProcessor {
                 try {
                     // Get full message
                     Message message = gmail.users().messages()
-                        .get(user, messageSummary.getId())
-                        .setFormat("full")
-                        .execute();
+                            .get(user, messageSummary.getId())
+                            .setFormat("full")
+                            .execute();
 
                     String fromEmail = extractHeader(message, "From");
                     String subject = extractHeader(message, "Subject");
-                    System.out.println("[EmailProcessor] Processing email from: " + fromEmail + ", subject: " + subject);
+                    System.out
+                            .println("[EmailProcessor] Processing email from: " + fromEmail + ", subject: " + subject);
 
                     // Find image attachments
                     List<MessagePart> parts = message.getPayload().getParts();
@@ -122,7 +120,8 @@ public class EmailProcessor {
                     boolean foundImage = false;
                     for (MessagePart part : parts) {
                         String mimeType = part.getMimeType();
-                        if (!isAllowedMimeType(mimeType)) continue;
+                        if (!isAllowedMimeType(mimeType))
+                            continue;
 
                         foundImage = true;
                         String attachmentId = part.getBody().getAttachmentId();
@@ -130,14 +129,13 @@ public class EmailProcessor {
 
                         // Download attachment
                         var attachment = gmail.users().messages().attachments()
-                            .get(user, messageSummary.getId(), attachmentId)
-                            .execute();
+                                .get(user, messageSummary.getId(), attachmentId)
+                                .execute();
 
                         byte[] imageBytes = Base64.getUrlDecoder().decode(attachment.getData());
 
                         // Write to temp file
-                        String ext = mimeType.contains("png") ? ".png" :
-                                     mimeType.contains("heic") ? ".heic" : ".jpg";
+                        String ext = mimeType.contains("png") ? ".png" : mimeType.contains("heic") ? ".heic" : ".jpg";
                         Path tempFile = Files.createTempFile("email-", ext);
 
                         try {
@@ -153,17 +151,18 @@ public class EmailProcessor {
                                 if (existing != null) {
                                     System.out.println("[EmailProcessor] Duplicate image, skipping: " + meta.sha256);
                                     sendReply(gmail, user, fromEmail, subject,
-                                        "It looks like we've already received this photo! " +
-                                        "It's already in the PERC database.");
+                                            "It looks like we've already received this photo! " +
+                                                    "It's already in the PERC database.");
                                     break;
                                 }
 
                                 // Upload to GCS
                                 GoogleCloudStorageAPI.uploadFile(tempFile.toString(), objectName);
                                 meta.cloud_uri = "gs://" + SecretConfig.getRequired("GCS_BUCKET_NAME")
-                                    + "/" + objectName;
+                                        + "/" + objectName;
                                 meta.filename = (filename != null && !filename.isBlank())
-                                    ? filename : "email-upload" + ext;
+                                        ? filename
+                                        : "email-upload" + ext;
 
                                 db.insertMeta(conn, meta);
                             }
@@ -175,7 +174,8 @@ public class EmailProcessor {
                                 String lon = String.format("%.5f", meta.longitude);
                                 String when = (meta.datetime != null) ? meta.datetime : "unknown time";
                                 String weather = (meta.weather_desc != null)
-                                    ? " Weather at time of photo: " + meta.weather_desc + "." : "";
+                                        ? " Weather at time of photo: " + meta.weather_desc + "."
+                                        : "";
                                 reply = "Thanks! Your photo has been received and logged. " +
                                         "Location: " + lat + ", " + lon + " at " + when + "." +
                                         weather + " We'll scan it for elk activity shortly.";
@@ -196,8 +196,8 @@ public class EmailProcessor {
                     if (!foundImage) {
                         // Email had attachments but none were images
                         sendReply(gmail, user, fromEmail, subject,
-                            "Hi! We received your email but couldn't find a valid image attachment. " +
-                            "Please attach a JPG, PNG, or HEIC photo and try again.");
+                                "Hi! We received your email but couldn't find a valid image attachment. " +
+                                        "Please attach a JPG, PNG, or HEIC photo and try again.");
                     }
 
                     // Mark as read regardless of outcome
@@ -206,7 +206,7 @@ public class EmailProcessor {
                 } catch (Exception e) {
                     failed++;
                     System.err.println("[EmailProcessor] Failed to process message "
-                        + messageSummary.getId() + ": " + e.getMessage());
+                            + messageSummary.getId() + ": " + e.getMessage());
                 }
             }
 
@@ -220,26 +220,27 @@ public class EmailProcessor {
     private static void markAsRead(Gmail gmail, String user, String messageId) {
         try {
             gmail.users().messages().modify(user, messageId,
-                new com.google.api.services.gmail.model.ModifyMessageRequest()
-                    .setRemoveLabelIds(Collections.singletonList("UNREAD"))
-            ).execute();
+                    new com.google.api.services.gmail.model.ModifyMessageRequest()
+                            .setRemoveLabelIds(Collections.singletonList("UNREAD")))
+                    .execute();
         } catch (Exception e) {
             System.err.println("[EmailProcessor] Failed to mark as read: " + e.getMessage());
         }
     }
 
     private static void sendReply(Gmail gmail, String user, String toEmail,
-                                   String originalSubject, String bodyText) {
+            String originalSubject, String bodyText) {
         try {
             String subject = originalSubject != null && !originalSubject.startsWith("Re:")
-                ? "Re: " + originalSubject : originalSubject;
+                    ? "Re: " + originalSubject
+                    : originalSubject;
 
             Properties props = new Properties();
             Session session = Session.getDefaultInstance(props, null);
             MimeMessage email = new MimeMessage(session);
             email.setFrom("me");
             email.addRecipient(jakarta.mail.Message.RecipientType.TO,
-                new jakarta.mail.internet.InternetAddress(toEmail));
+                    new jakarta.mail.internet.InternetAddress(toEmail));
             email.setSubject(subject);
             email.setText(bodyText);
 
@@ -270,9 +271,11 @@ public class EmailProcessor {
     }
 
     private static boolean isAllowedMimeType(String mimeType) {
-        if (mimeType == null) return false;
+        if (mimeType == null)
+            return false;
         for (String allowed : ALLOWED_MIME_TYPES) {
-            if (allowed.equalsIgnoreCase(mimeType)) return true;
+            if (allowed.equalsIgnoreCase(mimeType))
+                return true;
         }
         return false;
     }
