@@ -1,10 +1,10 @@
 package com.example;
 
 import java.io.InputStream;
-import java.net.URL;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
@@ -34,25 +34,35 @@ public class MessagingController {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(Map.of("error", "Only image files are accepted"));
 
-            ImagePipeline.Result result = ImagePipeline.processImage(file);
+            List<Map<String, Object>> processed = FileProcessor.uploadAndProcessFiles(
+                    new MultipartFile[] { file },
+                    null);
 
-            if (!result.isSuccess())
+            if (processed.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                         .body(Map.of("error", "Pipeline processing failed",
-                                "details", result.error.getMessage()));
+                                "details", "No output from file processor"));
+            }
 
-            String message = "Image processed: " + result.meta.filename +
-                    " | Hash: " + result.meta.sha256 +
-                    " | Saved to: " + result.filePath;
+            Map<String, Object> fileInfo = processed.get(0);
+            if (fileInfo.containsKey("error")) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of("error", "Pipeline processing failed",
+                                "details", String.valueOf(fileInfo.get("error"))));
+            }
+
+            String filename = String.valueOf(fileInfo.getOrDefault("filename", fileInfo.get("originalName")));
+            String sha256 = String.valueOf(fileInfo.getOrDefault("sha256", "unknown"));
+            String cloudUri = String.valueOf(fileInfo.getOrDefault("cloudUri", "unknown"));
+
+            String message = "Image processed: " + filename +
+                    " | Hash: " + sha256 +
+                    " | Stored at: " + cloudUri;
             Messenger.sendReply(phoneNumber, message);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "success");
-            response.put("metadata", Map.of(
-                    "filename", result.meta.filename,
-                    "sha256", result.meta.sha256,
-                    "gps_flag", result.meta.gps_flag
-            ));
+            Map<String, Object> response = Map.of(
+                    "status", "success",
+                    "file", fileInfo);
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
@@ -74,7 +84,7 @@ public class MessagingController {
         // No image attached — prompt the user
         if (mediaUrl == null || mediaUrl.isBlank()) {
             Messenger.sendReply(fromPhone,
-                "Hi! Please text a photo of the wildlife you've observed and we'll log it to the PERC database.");
+                    "Hi! Please text a photo of the wildlife you've observed and we'll log it to the PERC database.");
             return ResponseEntity.ok("<Response></Response>");
         }
 
@@ -84,7 +94,7 @@ public class MessagingController {
             String ext = (mediaContentType != null && mediaContentType.contains("png")) ? ".png" : ".jpg";
             tempFile = Files.createTempFile("twilio-", ext);
 
-            try (InputStream in = new URL(mediaUrl).openStream()) {
+            try (InputStream in = URI.create(mediaUrl).toURL().openStream()) {
                 Files.copy(in, tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
 
@@ -97,7 +107,7 @@ public class MessagingController {
                 Metadata existing = db.getImageByHash(conn, meta.sha256);
                 if (existing != null) {
                     Messenger.sendReply(fromPhone,
-                        "It looks like we've already received this photo! No worries, it's already in the database.");
+                            "It looks like we've already received this photo! No worries, it's already in the database.");
                     return ResponseEntity.ok("<Response></Response>");
                 }
 
@@ -127,11 +137,14 @@ public class MessagingController {
         } catch (Exception e) {
             System.err.println("SMS webhook error: " + e.getMessage());
             Messenger.sendReply(fromPhone,
-                "Sorry, something went wrong processing your photo. Please try again or contact PERC directly.");
+                    "Sorry, something went wrong processing your photo. Please try again or contact PERC directly.");
             return ResponseEntity.ok("<Response></Response>");
         } finally {
             if (tempFile != null) {
-                try { Files.deleteIfExists(tempFile); } catch (Exception ignored) {}
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (Exception ignored) {
+                }
             }
         }
     }

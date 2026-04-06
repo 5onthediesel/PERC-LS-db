@@ -24,6 +24,62 @@ import java.util.logging.Logger;
 class db {
     private static final Logger logger = Logger.getLogger(db.class.getName());
 
+    static void initializeSchemaAtStartup() throws SQLException {
+        try (Connection conn = connect()) {
+            setupSchema(conn, false);
+        }
+    }
+
+    static void setupSchema(Connection conn) throws SQLException {
+        setupSchema(conn, true);
+    }
+
+    static void setupSchema(Connection conn, boolean resetTable) throws SQLException {
+        try (Statement s = conn.createStatement()) {
+            s.execute("create schema if not exists cs370");
+            s.execute("set search_path to cs370");
+
+            if (resetTable) {
+                s.execute("drop table if exists images");
+            }
+
+            s.execute("create table if not exists images ("
+                    + "id serial primary key, "
+                    + "img_hash varchar(64) unique, "
+                    + "cloud_uri text not null, "
+                    + "filename text, "
+                    + "filesize_bytes bigint, "
+                    + "width int, "
+                    + "height int, "
+                    + "gps_flag boolean, "
+                    + "latitude double precision, "
+                    + "longitude double precision, "
+                    + "altitude double precision, "
+                    + "datetime_taken timestamptz, "
+                    + "datetime_uploaded timestamptz default now(), "
+                    + "temperature_c double precision, "
+                    + "humidity double precision, "
+                    + "weather_desc text, "
+                    + "processed_status boolean"
+                    + ")");
+            s.execute("alter table images add column if not exists filename text");
+            s.execute("alter table images add column if not exists filesize_bytes bigint");
+            s.execute("alter table images add column if not exists width int");
+            s.execute("alter table images add column if not exists height int");
+            s.execute("alter table images add column if not exists gps_flag boolean");
+            s.execute("alter table images add column if not exists latitude double precision");
+            s.execute("alter table images add column if not exists longitude double precision");
+            s.execute("alter table images add column if not exists altitude double precision");
+            s.execute("alter table images add column if not exists datetime_taken timestamptz");
+            s.execute("alter table images add column if not exists datetime_uploaded timestamptz default now()");
+            s.execute("alter table images add column if not exists temperature_c double precision");
+            s.execute("alter table images add column if not exists humidity double precision");
+            s.execute("alter table images add column if not exists weather_desc text");
+            s.execute("alter table images add column if not exists elk_count integer");
+            s.execute("alter table images add column if not exists processed_status boolean default false");
+        }
+    }
+
     static Connection connect() throws SQLException {
         String instanceConnectionName = SecretConfig.getRequired("CLOUD_SQL_INSTANCE");
         String dbName = SecretConfig.getRequired("CLOUD_SQL_DB_NAME");
@@ -199,39 +255,8 @@ class db {
         }
     }
 
-    static void setupSchema(Connection conn) throws SQLException {
-        Statement s = conn.createStatement();
-        s.execute("set search_path to cs370");
-        s.execute("drop table if exists images");
-        s.execute("""
-                    create table if not exists images (
-                    id serial primary key,
-                    img_hash varchar(64) unique,
-                    cloud_uri text not null,
-
-                    humidity double precision,
-                    temperature_c double precision,
-                    weather_desc text,
-
-                    filename text,
-                    filesize_bytes bigint,
-                    width int,
-                    height int,
-
-                    gps_flag boolean,
-                    latitude double precision,
-                    longitude double precision,
-                    altitude double precision,
-                    datetime_taken timestamptz,
-                    datetime_uploaded timestamptz default now(),
-                    elk_count integer,
-                    processed_status boolean
-                    )
-                """);
-    }
-
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
-        String sql = "insert into images (" +
+        String sql = "insert into cs370.images (" +
                 "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
                 "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc, elk_count, processed_status) "
                 +

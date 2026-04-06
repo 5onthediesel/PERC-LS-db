@@ -29,11 +29,23 @@ public class AnimalDetectAPI {
     private static final Logger logger = Logger.getLogger(AnimalDetectAPI.class.getName());
     private static final String ANIMALDETECT_URL = "https://www.animaldetect.com/api/v1/detect";
     private static final int DEFAULT_TIMEOUT = 60;
+    // Practical raw payload budget before request encoding/multipart overhead.
+    private static final int PRACTICAL_RAW_LIMIT_BYTES = 1_100_000;
 
     private String apiKey;
     private int timeout;
     private HttpClient httpClient;
     private ObjectMapper objectMapper;
+
+    private static class PreparedUploadImage {
+        final byte[] bytes;
+        final String filename;
+
+        PreparedUploadImage(byte[] bytes, String filename) {
+            this.bytes = bytes;
+            this.filename = filename;
+        }
+    }
 
     public AnimalDetectAPI(String apiKey) {
         this(apiKey, DEFAULT_TIMEOUT);
@@ -109,8 +121,8 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Call AnimalDetect API with fallback image compression if payload is too
-     * large.
+     * Call AnimalDetect API with strict preflight size enforcement and fallback
+     * compression retries if API still reports payload too large.
      */
     public Map<String, Object> callAnimalDetectAPIWithFallback(
             byte[] imageBytes,
@@ -118,32 +130,39 @@ public class AnimalDetectAPI {
             String country,
             double threshold) throws Exception {
 
+        PreparedUploadImage prepared = prepareImageForPayloadLimit(imageBytes, filename);
+
+        // Initial call uses strictly limited bytes (<= practical raw budget).
+        try {
+            return callAnimalDetectAPI(prepared.bytes, prepared.filename, country, threshold);
+        } catch (Exception e) {
+            if (!isPayloadTooLargeError(e)) {
+                throw e;
+            }
+        }
+
         Exception lastError = null;
+        byte[] currentBytes = prepared.bytes;
+        String currentName = prepared.filename;
         int[][] fallbackSteps = {
-                { 0, 0 }, // no compression
-                { 2200, 92 },
                 { 1800, 85 },
                 { 1400, 78 },
-                { 1100, 70 }
+                { 1100, 70 },
+                { 900, 62 },
+                { 720, 55 }
         };
 
         for (int[] step : fallbackSteps) {
             try {
-                byte[] sendBytes = imageBytes;
-                String sendName = filename;
-
-                if (step[0] > 0 && step[1] > 0) {
-                    byte[] compressed = compressImageForUpload(imageBytes, filename, step[0], step[1]);
-                    sendBytes = compressed;
-                    String baseName = (filename == null || filename.isBlank()) ? "upload"
-                            : (filename.lastIndexOf('.') > 0 ? filename.substring(0, filename.lastIndexOf('.'))
-                                    : filename);
-                    sendName = baseName + "_compressed.jpeg";
-                    logger.info("Retrying with compressed image (" + (sendBytes.length / 1024) +
-                            " KB, max_side=" + step[0] + ", quality=" + step[1] + ")");
+                currentBytes = compressImageForUpload(currentBytes, currentName, step[0], step[1]);
+                if (currentBytes.length > PRACTICAL_RAW_LIMIT_BYTES) {
+                    continue;
                 }
+                currentName = toCompressedFilename(filename);
+                logger.info("Retrying with compressed image (" + (currentBytes.length / 1024) +
+                        " KB, max_side=" + step[0] + ", quality=" + step[1] + ")");
 
-                return callAnimalDetectAPI(sendBytes, sendName, country, threshold);
+                return callAnimalDetectAPI(currentBytes, currentName, country, threshold);
             } catch (Exception e) {
                 lastError = e;
                 if (!isPayloadTooLargeError(e)) {
@@ -193,6 +212,44 @@ public class AnimalDetectAPI {
         writer.dispose();
 
         return out.toByteArray();
+    }
+
+    private PreparedUploadImage prepareImageForPayloadLimit(byte[] imageBytes, String filename) throws Exception {
+        if (imageBytes == null || imageBytes.length == 0) {
+            throw new IllegalArgumentException("Image payload is empty");
+        }
+
+        String safeFilename = (filename == null || filename.isBlank()) ? "upload.jpeg" : filename;
+        if (imageBytes.length <= PRACTICAL_RAW_LIMIT_BYTES) {
+            return new PreparedUploadImage(imageBytes, safeFilename);
+        }
+
+        int[][] strictSteps = {
+                { 2200, 92 },
+                { 1800, 85 },
+                { 1400, 78 },
+                { 1100, 70 },
+                { 900, 62 },
+                { 720, 55 }
+        };
+
+        for (int[] step : strictSteps) {
+            byte[] compressed = compressImageForUpload(imageBytes, safeFilename, step[0], step[1]);
+            if (compressed.length <= PRACTICAL_RAW_LIMIT_BYTES) {
+                logger.info("Compressed oversized image from " + (imageBytes.length / 1024) + " KB to "
+                        + (compressed.length / 1024) + " KB to satisfy practical raw limit (~1.1MB)");
+                return new PreparedUploadImage(compressed, toCompressedFilename(safeFilename));
+            }
+        }
+
+        throw new IllegalArgumentException(
+                "Image is too large: unable to shrink under practical raw limit (~1.1MB) required by Vertex encoded request cap");
+    }
+
+    private String toCompressedFilename(String filename) {
+        String baseName = (filename == null || filename.isBlank()) ? "upload"
+                : (filename.lastIndexOf('.') > 0 ? filename.substring(0, filename.lastIndexOf('.')) : filename);
+        return baseName + "_compressed.jpeg";
     }
 
     /**
