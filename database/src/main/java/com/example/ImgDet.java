@@ -21,7 +21,7 @@ public class ImgDet {
         if (ext.equals("jpg") || ext.equals("jpeg"))
             return f;
 
-        File jpgFile = new File(f.getParent(), removeExtension(f.getName()) + ".jpg");
+        File jpgFile = new File(f.getParent(), removeExtension(f.getName()) + ".jpeg");
 
         if (ext.equals("heic") || ext.equals("heif")) {
             ProcessBuilder pb = new ProcessBuilder(
@@ -76,7 +76,7 @@ public class ImgDet {
         if (!ext.equals("png"))
             throw new IOException("Unsupported image format: " + f.getAbsolutePath());
 
-        File jpgFile = new File(f.getParent(), removeExtension(f.getName()) + ".jpg");
+        File jpgFile = new File(f.getParent(), removeExtension(f.getName()) + ".jpeg");
 
         byte[] pngBytes = Files.readAllBytes(f.toPath());
         byte[] exif = extractExifFromPng(pngBytes);
@@ -96,7 +96,7 @@ public class ImgDet {
         }
 
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-        ImageIO.write(rgb, "jpg", baos);
+        ImageIO.write(rgb, "jpeg", baos);
         byte[] jpegBytes = baos.toByteArray();
 
         jpegBytes = insertExifIntoJpeg(jpegBytes, exif);

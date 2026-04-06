@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,6 +33,7 @@ import org.springframework.web.multipart.MultipartFile;
 // @CrossOrigin(origins = "http://localhost:3000") // Switched to global cors
 // config
 public class FileUploadController {
+    private static final Logger logger = Logger.getLogger(FileUploadController.class.getName());
 
     private static class UploadMetadataData {
         public String filename;
@@ -76,6 +79,16 @@ public class FileUploadController {
         return false;
     }
 
+    private static String normalizedStorageExtension(String ext) {
+        if (ext == null || ext.isBlank()) {
+            return ".bin";
+        }
+        if ("jpg".equals(ext) || "jpeg".equals(ext)) {
+            return ".jpeg";
+        }
+        return "." + ext;
+    }
+
     private static void ensureSchema(Connection conn) throws SQLException {
         try (Statement s = conn.createStatement()) {
             s.execute("create schema if not exists cs370");
@@ -118,7 +131,7 @@ public class FileUploadController {
     }
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> uploadFileUnprocessed(
+    public ResponseEntity<?> uploadFileInstantProcessed(
             @RequestParam("files") MultipartFile[] files,
             @RequestParam(value = "metadata", required = false) String metadataJson) {
         try {
@@ -142,6 +155,15 @@ public class FileUploadController {
                 }
             }
 
+            // Initialize AnimalDetect API for live detection
+            AnimalDetectAPI animalDetectAPI = null;
+            try {
+                String apiKey = AnimalDetectAPI.resolveApiKey(null);
+                animalDetectAPI = new AnimalDetectAPI(apiKey, 60);
+            } catch (Exception e) {
+                logger.log(Level.WARNING, "AnimalDetect API not available", e);
+            }
+
             List<Map<String, Object>> uploadedFiles = new ArrayList<>();
             try (Connection conn = db.connect()) {
                 ensureSchema(conn);
@@ -155,7 +177,7 @@ public class FileUploadController {
                         Files.write(tempFile, file.getBytes());
 
                         String ext = ImgDet.getExtension(originalName == null ? "" : originalName).toLowerCase();
-                        String dotExt = (ext == null || ext.isBlank()) ? ".bin" : "." + ext;
+                        String dotExt = normalizedStorageExtension(ext);
 
                         Metadata meta = new Metadata();
                         meta.filename = originalName;
@@ -163,6 +185,7 @@ public class FileUploadController {
                         meta.sha256 = ImgHash.sha256(tempFile.toFile());
                         meta.cloud_uri = "";
                         meta.processed_status = false;
+                        meta.elk_count = null;
 
                         UploadMetadataData uploadData = metadataList.isEmpty() ? null : metadataList.get(i);
                         if (uploadData != null && uploadData.filename != null && originalName != null
@@ -191,7 +214,6 @@ public class FileUploadController {
                                 : uploadData.temperature_c;
                         meta.humidity = (uploadData == null || uploadData.humidity == null) ? 0.0 : uploadData.humidity;
                         meta.weather_desc = uploadData == null ? null : uploadData.weather_desc;
-                        meta.elk_count = null;
 
                         String objectName = meta.sha256 + dotExt;
 
@@ -212,12 +234,48 @@ public class FileUploadController {
                         meta.cloud_uri = "gs://" + BUCKET_NAME + "/" + objectName;
                         db.insertMeta(conn, meta);
 
+                        System.out.println("AnimalDetect API initialized: " + (animalDetectAPI != null));
+                        // ===== LIVE DETECTION: Call AnimalDetect API =====
+                        if (animalDetectAPI != null) {
+                            try {
+                                byte[] imageBytes = Files.readAllBytes(tempFile);
+                                Map<String, Object> response = animalDetectAPI.callAnimalDetectAPIWithFallback(
+                                        imageBytes,
+                                        originalName,
+                                        "USA",
+                                        0.2);
+                                List<String> predictionLines = animalDetectAPI.formatDetectionsForConsole(response);
+                                if (predictionLines.isEmpty()) {
+                                    logger.info("Model predictions for " + originalName + ": none");
+                                } else {
+                                    for (String predictionLine : predictionLines) {
+                                        logger.info("Model predictions for " + originalName + " -> " + predictionLine);
+                                    }
+                                }
+                                int elkCount = animalDetectAPI.countElkFromResponse(response, 0.2);
+                                meta.elk_count = elkCount;
+                                meta.processed_status = true;
+
+                                System.out.println("Live detection completed: " + originalName +
+                                        " - " + elkCount + " elk detected");
+                            } catch (Exception detectionError) {
+                                logger.log(Level.WARNING,
+                                        "Animal detection failed for " + originalName, detectionError);
+                                meta.elk_count = null;
+                                meta.processed_status = false;
+                            }
+                        }
+
+                        // Update metadata in database with detection results
+                        db.updateMetaWithDetection(conn, meta.sha256, meta.elk_count, meta.processed_status);
+
                         Map<String, Object> fileInfo = new HashMap<>();
                         fileInfo.put("originalName", originalName);
                         fileInfo.put("objectName", objectName);
                         fileInfo.put("cloudUri", meta.cloud_uri);
                         fileInfo.put("sha256", meta.sha256);
-                        fileInfo.put("processedStatus", false);
+                        fileInfo.put("processedStatus", meta.processed_status);
+                        fileInfo.put("elkCount", meta.elk_count);
                         addMetadataToFileInfo(fileInfo, meta);
                         uploadedFiles.add(fileInfo);
                     } catch (SQLException e) {
@@ -236,20 +294,22 @@ public class FileUploadController {
             }
 
             return ResponseEntity
-                    .ok(Map.of("message", "Files uploaded successfully (unprocessed)", "files", uploadedFiles));
+                    .ok(Map.of("message", "Files uploaded successfully (with live detection)", "files", uploadedFiles));
         } catch (Exception e) {
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
-            System.err.println(sw.toString());
+            logger.log(Level.SEVERE, "Upload failed in uploadFileInstantProcessed", e);
+            System.err.print(sw.toString());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage(), "stackTrace", sw.toString()));
         }
     }
 
-    // @PostMapping(value = "/upload/instant", consumes =
+    // @PostMapping(value = "/upload/unprocessed", consumes =
     // MediaType.MULTIPART_FORM_DATA_VALUE)
-    // public ResponseEntity<?> uploadFileInstantProcessing(@RequestParam("files")
-    // MultipartFile[] files) {
+    // public ResponseEntity<?> uploadFileUnprocessed(
+    // @RequestParam("files") MultipartFile[] files,
+    // @RequestParam(value = "metadata", required = false) String metadataJson) {
     // try {
     // for (MultipartFile file : files) {
     // String originalName = file.getOriginalFilename();
@@ -259,34 +319,81 @@ public class FileUploadController {
     // }
     // }
 
+    // ObjectMapper objectMapper = new ObjectMapper();
+    // List<UploadMetadataData> metadataList = List.of();
+    // if (metadataJson != null && !metadataJson.isBlank()) {
+    // metadataList = objectMapper.readValue(metadataJson,
+    // new TypeReference<List<UploadMetadataData>>() {
+    // });
+    // if (metadataList.size() != files.length) {
+    // return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+    // .body(Map.of("error", "metadata length must match files length"));
+    // }
+    // }
+
     // List<Map<String, Object>> uploadedFiles = new ArrayList<>();
     // try (Connection conn = db.connect()) {
     // ensureSchema(conn);
 
-    // for (MultipartFile file : files) {
+    // for (int i = 0; i < files.length; i++) {
+    // MultipartFile file = files[i];
     // String originalName = file.getOriginalFilename();
     // String suffix = (originalName == null || originalName.isBlank()) ? ".bin" :
     // "-" + originalName;
     // Path tempFile = Files.createTempFile("upload-", suffix);
-    // File jpgFile = null;
     // try {
     // Files.write(tempFile, file.getBytes());
 
     // String ext = ImgDet.getExtension(originalName == null ? "" :
     // originalName).toLowerCase();
-    // if (ext.equals("png")) {
-    // jpgFile = ImgDet.convertPngToJpg(tempFile.toFile());
-    // } else {
-    // jpgFile = ImgDet.convertToJpg(tempFile.toFile());
+    // String dotExt = normalizedStorageExtension(ext);
+
+    // Metadata meta = new Metadata();
+    // meta.filename = originalName;
+    // meta.filesize = Files.size(tempFile);
+    // meta.sha256 = ImgHash.sha256(tempFile.toFile());
+    // meta.cloud_uri = "";
+    // meta.processed_status = false;
+    // meta.elk_count = null;
+
+    // UploadMetadataData uploadData = metadataList.isEmpty() ? null :
+    // metadataList.get(i);
+    // if (uploadData != null && uploadData.filename != null && originalName != null
+    // && !uploadData.filename.equals(originalName)) {
+    // return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+    // .body(Map.of("error",
+    // "metadata filename mismatch at index " + i + ": expected "
+    // + originalName + " but got " + uploadData.filename));
     // }
-    // Metadata meta = db.loadMetadata(jpgFile);
-    // String objectName = meta.sha256 + ".jpg";
+    // if (uploadData != null && uploadData.latitude != null && uploadData.longitude
+    // != null) {
+    // meta.latitude = uploadData.latitude;
+    // meta.longitude = uploadData.longitude;
+    // meta.altitude = uploadData.altitude;
+    // meta.gps_flag = true;
+    // } else {
+    // meta.latitude = null;
+    // meta.longitude = null;
+    // meta.altitude = null;
+    // meta.gps_flag = false;
+    // }
+
+    // meta.datetime = uploadData == null ? null : uploadData.datetime;
+    // meta.width = (uploadData == null || uploadData.width == null) ? 0 :
+    // uploadData.width;
+    // meta.height = (uploadData == null || uploadData.height == null) ? 0 :
+    // uploadData.height;
+    // meta.temperature_c = (uploadData == null || uploadData.temperature_c == null)
+    // ? 0.0
+    // : uploadData.temperature_c;
+    // meta.humidity = (uploadData == null || uploadData.humidity == null) ? 0.0 :
+    // uploadData.humidity;
+    // meta.weather_desc = uploadData == null ? null : uploadData.weather_desc;
+
+    // String objectName = meta.sha256 + dotExt;
 
     // Metadata existing = db.getImageByHash(conn, meta.sha256);
     // if (existing != null) {
-    // System.out.println("Duplicate image hash detected; skipping upload. hash=" +
-    // meta.sha256
-    // + ", originalName=" + originalName);
     // Map<String, Object> fileInfo = new HashMap<>();
     // fileInfo.put("originalName", originalName);
     // fileInfo.put("status", "duplicate hash; skipped upload");
@@ -298,8 +405,7 @@ public class FileUploadController {
     // continue;
     // }
 
-    // // upload to GCS and insert metadata into DB
-    // GoogleCloudStorageAPI.uploadFile(jpgFile.getAbsolutePath(), objectName);
+    // GoogleCloudStorageAPI.uploadFile(tempFile.toString(), objectName);
     // meta.cloud_uri = "gs://" + BUCKET_NAME + "/" + objectName;
     // db.insertMeta(conn, meta);
 
@@ -308,6 +414,8 @@ public class FileUploadController {
     // fileInfo.put("objectName", objectName);
     // fileInfo.put("cloudUri", meta.cloud_uri);
     // fileInfo.put("sha256", meta.sha256);
+    // fileInfo.put("processedStatus", meta.processed_status);
+    // fileInfo.put("elkCount", meta.elk_count);
     // addMetadataToFileInfo(fileInfo, meta);
     // uploadedFiles.add(fileInfo);
     // } catch (SQLException e) {
@@ -320,21 +428,19 @@ public class FileUploadController {
     // throw e;
     // }
     // } finally {
-    // if (jpgFile != null && !jpgFile.equals(tempFile.toFile())) {
-    // Files.deleteIfExists(jpgFile.toPath());
-    // }
     // Files.deleteIfExists(tempFile);
     // }
     // }
     // }
 
     // return ResponseEntity
-    // .ok(Map.of("message", "Files uploaded successfully (instant processing)",
-    // "files", uploadedFiles));
+    // .ok(Map.of("message", "Files uploaded successfully (unprocessed)", "files",
+    // uploadedFiles));
     // } catch (Exception e) {
     // StringWriter sw = new StringWriter();
     // e.printStackTrace(new PrintWriter(sw));
-    // System.err.println(sw.toString());
+    // logger.log(Level.SEVERE, "Upload failed in uploadFileUnprocessed", e);
+    // System.err.print(sw.toString());
     // return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
     // .body(Map.of("error", e.getMessage(), "stackTrace", sw.toString()));
     // }

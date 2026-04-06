@@ -506,6 +506,26 @@ class db {
         return jpgFiles;
     }
 
+    /**
+     * Update image metadata with animal detection results (elk_count and
+     * processed_status).
+     * Called after AnimalDetect API completes detection on a newly uploaded image.
+     */
+    static void updateMetaWithDetection(Connection conn, String sha256Hash, Integer elkCount, boolean processedStatus)
+            throws SQLException {
+        String sql = "UPDATE cs370.images SET elk_count = ?, processed_status = ? WHERE img_hash = ?";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setObject(1, elkCount, Types.INTEGER);
+            ps.setBoolean(2, processedStatus);
+            ps.setString(3, sha256Hash);
+            ps.executeUpdate();
+            if (!conn.getAutoCommit()) {
+                conn.commit();
+            }
+        }
+    }
+
     /* -------------------------------------------------------------------------- */
 
     public static void main(String[] args) throws Exception {
