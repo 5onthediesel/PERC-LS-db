@@ -13,10 +13,14 @@ CLOUD_SQL_INSTANCE="cs370perc:us-east1:cs370-perc-sql"
 # Local files in your repo that should never be committed.
 APP_SECRETS_FILE="./secrets/app-secrets.json"
 SERVICE_ACCOUNT_FILE="./secrets/service-account.json"
+GMAIL_CREDENTIALS_FILE="./secrets/gmail-credentials.json"
+GMAIL_TOKEN_FILE="./secrets/gmail-token/StoredCredential"
 
 # Secret Manager secret names.
 APP_SECRETS_SECRET_NAME="app-secrets-json"
 SERVICE_ACCOUNT_SECRET_NAME="gcs-service-account-json"
+GMAIL_CREDENTIALS_SECRET_NAME="gmail-credentials-json"
+GMAIL_TOKEN_SECRET_NAME="gmail-token"
 
 if [[ ! -f "${APP_SECRETS_FILE}" ]]; then
   echo "Missing ${APP_SECRETS_FILE}"
@@ -25,6 +29,16 @@ fi
 
 if [[ ! -f "${SERVICE_ACCOUNT_FILE}" ]]; then
   echo "Missing ${SERVICE_ACCOUNT_FILE}"
+  exit 1
+fi
+
+if [[ ! -f "${GMAIL_CREDENTIALS_FILE}" ]]; then
+  echo "Missing ${GMAIL_CREDENTIALS_FILE}"
+  exit 1
+fi
+
+if [[ ! -f "${GMAIL_TOKEN_FILE}" ]]; then
+  echo "Missing ${GMAIL_TOKEN_FILE}"
   exit 1
 fi
 
@@ -52,10 +66,14 @@ ensure_secret_exists() {
 
 ensure_secret_exists "${APP_SECRETS_SECRET_NAME}"
 ensure_secret_exists "${SERVICE_ACCOUNT_SECRET_NAME}"
+ensure_secret_exists "${GMAIL_CREDENTIALS_SECRET_NAME}"
+ensure_secret_exists "${GMAIL_TOKEN_SECRET_NAME}"
 
 # Add new secret versions from local files.
 gcloud secrets versions add "${APP_SECRETS_SECRET_NAME}" --data-file="${APP_SECRETS_FILE}"
 gcloud secrets versions add "${SERVICE_ACCOUNT_SECRET_NAME}" --data-file="${SERVICE_ACCOUNT_FILE}"
+gcloud secrets versions add "${GMAIL_CREDENTIALS_SECRET_NAME}" --data-file="${GMAIL_CREDENTIALS_FILE}"
+gcloud secrets versions add "${GMAIL_TOKEN_SECRET_NAME}" --data-file="${GMAIL_TOKEN_FILE}"
 
 # Build and push image.
 gcloud builds submit --tag "${IMAGE_URI}" .
@@ -67,5 +85,5 @@ gcloud run deploy "${SERVICE_NAME}" \
   --region "${REGION}" \
   --allow-unauthenticated \
   --add-cloudsql-instances "${CLOUD_SQL_INSTANCE}" \
-  --set-secrets=/secrets/app-secrets/app-secrets.json="${APP_SECRETS_SECRET_NAME}":latest,/secrets/service-account/service-account.json="${SERVICE_ACCOUNT_SECRET_NAME}":latest \
+  --set-secrets=/secrets/app-secrets/app-secrets.json="${APP_SECRETS_SECRET_NAME}":latest,/secrets/service-account/service-account.json="${SERVICE_ACCOUNT_SECRET_NAME}":latest,/secrets/gmail-credentials/gmail-credentials.json="${GMAIL_CREDENTIALS_SECRET_NAME}":latest,/secrets/gmail-token/StoredCredential="${GMAIL_TOKEN_SECRET_NAME}":latest \
   --set-env-vars APP_SECRETS_PATH=/secrets/app-secrets/app-secrets.json
