@@ -39,7 +39,7 @@ public class GoogleCloudStorageAPI {
     }
 
     public static String uploadFile(MultipartFile file) throws IOException, java.security.NoSuchAlgorithmException {
-        String objectName = ImgHash.sha256(file.getBytes());
+        String objectName = ImageUtils.sha256(file.getBytes());
         Storage storage = buildStorage();
 
         BlobId blobId = BlobId.of(BUCKET_NAME, objectName);
