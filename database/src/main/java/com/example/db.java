@@ -246,7 +246,11 @@ class db {
         if (meta.gps_flag) {
             ps.setDouble(4, meta.latitude);
             ps.setDouble(5, meta.longitude);
-            ps.setDouble(6, meta.altitude);
+            if (meta.altitude != null) {
+                ps.setDouble(6, meta.altitude);
+            } else {
+                ps.setNull(6, java.sql.Types.DOUBLE);
+            }
         } else {
             ps.setNull(4, Types.DOUBLE);
             ps.setNull(5, Types.DOUBLE);
@@ -258,8 +262,8 @@ class db {
         ps.setInt(9, meta.width);
         ps.setInt(10, meta.height);
         ps.setLong(11, meta.filesize);
-        ps.setDouble(12, meta.temperature_c);
-        ps.setDouble(13, meta.humidity);
+        ps.setObject(12, meta.temperature_c, java.sql.Types.DOUBLE);
+        ps.setObject(13, meta.humidity, java.sql.Types.DOUBLE);
         ps.setString(14, meta.weather_desc);
         ps.setObject(15, meta.elk_count, Types.INTEGER);
         ps.setBoolean(16, meta.processed_status);
