@@ -29,8 +29,8 @@ public class EventScheduler {
      * TODO: Replace with SendGrid Inbound Parse webhook when PERC provides a
      * domain.
      */
-    @Scheduled(fixedDelay = 3600000)
-    public void pollEmailInbox() {
-        EmailProcessor.pollAndProcess();
-    }
+    // @Scheduled(fixedDelay = 3600000)
+    // public void pollEmailInbox() {
+    //     EmailProcessor.pollAndProcess();
+    // }
 }

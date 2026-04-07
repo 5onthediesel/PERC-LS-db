@@ -152,4 +152,115 @@ public class MessagingController {
             }
         }
     }
+
+    /**
+     * SendGrid Inbound Parse webhook: POST /webhook/inbound-email
+     * SendGrid calls this when a landowner emails an image to submissions@perc.org.
+     * Replaces the hourly Gmail polling in EventScheduler.
+     */
+    @PostMapping("/webhook/inbound-email")
+    public ResponseEntity<String> sendGridEmailWebhook(
+            @RequestParam(value = "from", required = false) String fromEmail,
+            @RequestParam(value = "subject", required = false) String subject) {
+
+        System.out.println("[SendGrid] Inbound email from: " + fromEmail + ", subject: " + subject);
+
+        // SendGrid sends attachments as attachment1, attachment2, etc.
+        // We check up to 10 attachments
+        boolean foundImage = false;
+
+        for (int i = 1; i <= 10; i++) {
+            // Pull the attachment from the multipart request manually
+            org.springframework.web.context.request.RequestAttributes attrs =
+                    org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs == null) break;
+
+            jakarta.servlet.http.HttpServletRequest raw =
+                    ((org.springframework.web.context.request.ServletRequestAttributes) attrs).getRequest();
+
+            try {
+                org.springframework.web.multipart.MultipartHttpServletRequest multipart =
+                        (org.springframework.web.multipart.MultipartHttpServletRequest) raw;
+
+                org.springframework.web.multipart.MultipartFile attachment = multipart.getFile("attachment" + i);
+                if (attachment == null || attachment.isEmpty()) break;
+
+                String contentType = attachment.getContentType();
+                if (contentType == null || !isAllowedImageType(contentType)) {
+                    System.out.println("[SendGrid] Skipping non-image attachment: " + contentType);
+                    continue;
+                }
+
+                foundImage = true;
+                String ext = contentType.contains("png") ? ".png" : contentType.contains("heic") ? ".heic" : ".jpg";
+                String originalFilename = attachment.getOriginalFilename();
+                Path tempFile = Files.createTempFile("sendgrid-", ext);
+
+                try {
+                    Files.write(tempFile, attachment.getBytes());
+
+                    Metadata meta = db.loadMetadata(tempFile.toFile());
+                    meta.processed_status = false;
+                    String objectName = meta.sha256 + ext;
+
+                    try (java.sql.Connection conn = db.connect()) {
+                        // Duplicate check
+                        Metadata existing = db.getImageByHash(conn, meta.sha256);
+                        if (existing != null) {
+                            System.out.println("[SendGrid] Duplicate image, skipping: " + meta.sha256);
+                            // No reply needed for duplicates via email in this flow
+                            continue;
+                        }
+
+                        // Upload to GCS
+                        GoogleCloudStorageAPI.uploadFile(tempFile.toString(), objectName);
+                        meta.cloud_uri = "gs://" + SecretConfig.getRequired("GCS_BUCKET_NAME") + "/" + objectName;
+                        meta.filename = (originalFilename != null && !originalFilename.isBlank())
+                                ? originalFilename
+                                : "email-upload" + ext;
+
+                        db.insertMeta(conn, meta);
+
+                        // Run AnimalDetect immediately (same as EmailProcessor)
+                        try {
+                            String apiKey = AnimalDetectAPI.resolveApiKey(null);
+                            AnimalDetectAPI animalDetectAPI = new AnimalDetectAPI(apiKey, 60);
+                            java.util.Map<String, Object> response = animalDetectAPI.callAnimalDetectAPIWithFallback(
+                                    attachment.getBytes(), meta.filename, "USA", 0.2);
+                            meta.elk_count = animalDetectAPI.countElkFromResponse(response, 0.2);
+                            meta.processed_status = true;
+                        } catch (Exception detectionError) {
+                            System.err.println("[SendGrid] Animal detection failed: " + detectionError.getMessage());
+                            meta.elk_count = null;
+                            meta.processed_status = false;
+                        }
+
+                        db.updateMetaWithDetection(conn, meta.sha256, meta.elk_count, meta.processed_status);
+                        System.out.println("[SendGrid] Stored: " + meta.filename
+                                + " | elk_count=" + meta.elk_count);
+                    }
+
+                } finally {
+                    Files.deleteIfExists(tempFile);
+                }
+
+            } catch (Exception e) {
+                System.err.println("[SendGrid] Error processing attachment" + i + ": " + e.getMessage());
+            }
+        }
+
+        if (!foundImage) {
+            System.out.println("[SendGrid] Email from " + fromEmail + " had no valid image attachments.");
+        }
+
+        // SendGrid requires a 200 response — always return OK
+        return ResponseEntity.ok("");
+    }
+
+    private boolean isAllowedImageType(String contentType) {
+        return contentType.equals("image/jpeg") ||
+            contentType.equals("image/jpg") ||
+            contentType.equals("image/png") ||
+            contentType.equals("image/heic");
+    }
 }
