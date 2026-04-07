@@ -83,6 +83,14 @@ public class EmailProcessor {
 
         try {
             Gmail gmail = buildGmailService();
+            AnimalDetectAPI animalDetectAPI = null;
+            try {
+                String apiKey = AnimalDetectAPI.resolveApiKey(null);
+                animalDetectAPI = new AnimalDetectAPI(apiKey, 60);
+            } catch (Exception e) {
+                System.err.println("[EmailProcessor] AnimalDetect API not available: " + e.getMessage());
+            }
+
             String user = "me";
 
             // Find unread emails with attachments
@@ -143,6 +151,7 @@ public class EmailProcessor {
 
                             // Run through instant pipeline
                             Metadata meta = db.loadMetadata(tempFile.toFile());
+                            meta.processed_status = false;
                             String objectName = meta.sha256 + ".jpg";
 
                             try (java.sql.Connection conn = db.connect()) {
@@ -165,6 +174,42 @@ public class EmailProcessor {
                                         : "email-upload" + ext;
 
                                 db.insertMeta(conn, meta);
+
+                                if (animalDetectAPI != null) {
+                                    try {
+                                        java.util.Map<String, Object> response = animalDetectAPI
+                                                .callAnimalDetectAPIWithFallback(
+                                                        imageBytes,
+                                                        meta.filename,
+                                                        "USA",
+                                                        0.2);
+
+                                        List<String> predictionLines = animalDetectAPI
+                                                .formatDetectionsForConsole(response);
+                                        if (predictionLines.isEmpty()) {
+                                            System.out.println("[EmailProcessor] Model predictions for " + meta.filename
+                                                    + ": none");
+                                        } else {
+                                            for (String predictionLine : predictionLines) {
+                                                System.out.println(
+                                                        "[EmailProcessor] Model predictions for " + meta.filename
+                                                                + " -> " + predictionLine);
+                                            }
+                                        }
+
+                                        meta.elk_count = animalDetectAPI.countElkFromResponse(response, 0.2);
+                                        meta.processed_status = true;
+                                    } catch (Exception detectionError) {
+                                        System.err.println("[EmailProcessor] Animal detection failed for "
+                                                + meta.filename + ": " + detectionError.getMessage());
+                                        meta.elk_count = null;
+                                        meta.processed_status = false;
+                                    }
+                                }
+
+                                db.updateMetaWithDetection(conn, meta.sha256, meta.elk_count, meta.processed_status);
+                                System.out.println("[EmailProcessor] Final elk count for " + meta.filename + ": "
+                                        + (meta.elk_count != null ? meta.elk_count : "unknown"));
                             }
 
                             // Build reply based on GPS
