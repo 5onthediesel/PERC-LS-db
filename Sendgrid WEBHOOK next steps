@@ -1,0 +1,31 @@
+We setup the webhook already
+
+I also made a SendGrid account that takes images from submit.perc.org 
+based on the Cloudflare MX record, and pass it onto mx.sendgrid.net. SendGrid then POSTs
+it to the Cloud Run webhook inside MessagingController. 
+
+We need to ask perc to setup the subdomain email address for submissions@submit.perc.org
+Here's a template
+
+Hi, w
+
+e need a small change made to perc.org's settings in Cloudflare (your DNS provider) to allow our app to receive emails at a new address we're setting up.
+Here's exactly what we need done:
+
+Log into Cloudflare
+Select the perc.org domain
+Click on "DNS" in the left menu
+Click "Add record"
+Set the fields to exactly this:
+
+Type: MX
+Name: submit
+Mail server: mx.sendgrid.net
+Priority: 10
+TTL: Auto
+
+
+Click Save
+
+That's it! This won't affect your existing perc.org email at all. it just creates a new address (submissions@submit.perc.org) that our app will listen to. If you log into Cloudflare and can't find where to do this, just send us a screenshot and we can walk you through it.
+
