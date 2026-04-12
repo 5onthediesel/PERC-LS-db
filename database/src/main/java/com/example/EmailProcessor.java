@@ -20,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
@@ -44,6 +45,15 @@ public class EmailProcessor {
         String credentialsPath = SecretConfig.getRequired("GMAIL_CREDENTIALS_PATH");
         String tokenPath = SecretConfig.getRequired("GMAIL_TOKEN_PATH");
 
+        File tokenPathFile = new File(tokenPath);
+        File tokenStoreDir = tokenPathFile;
+        if (tokenPathFile.isFile() || tokenPathFile.getName().equals("StoredCredential")) {
+            tokenStoreDir = tokenPathFile.getParentFile();
+        }
+        if (tokenStoreDir == null) {
+            throw new IOException("Invalid GMAIL_TOKEN_PATH: " + tokenPath);
+        }
+
         GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(
                 JSON_FACTORY,
                 new FileReader(credentialsPath));
@@ -53,7 +63,7 @@ public class EmailProcessor {
                 JSON_FACTORY,
                 clientSecrets,
                 SCOPES)
-                .setDataStoreFactory(new FileDataStoreFactory(new File(tokenPath)))
+                .setDataStoreFactory(new FileDataStoreFactory(tokenStoreDir))
                 .setAccessType("offline")
                 .build();
 
@@ -114,26 +124,38 @@ public class EmailProcessor {
                             .execute();
 
                     String fromEmail = extractHeader(message, "From");
+                    String fromAddress = extractEmailAddress(fromEmail);
                     String subject = extractHeader(message, "Subject");
                     System.out
                             .println("[EmailProcessor] Processing email from: " + fromEmail + ", subject: " + subject);
 
-                    // Find image attachments
-                    List<MessagePart> parts = message.getPayload().getParts();
-                    if (parts == null) {
+                    boolean voiceGoogleSender = fromAddress != null
+                            && fromAddress.toLowerCase().endsWith("@txt.voice.google.com");
+
+                    // Find image attachments, including nested multipart sections.
+                    List<MessagePart> imageParts = new ArrayList<>();
+                    collectImageAttachmentParts(message.getPayload(), imageParts, voiceGoogleSender);
+                    if (imageParts.isEmpty()) {
+                        if (!voiceGoogleSender) {
+                            sendReply(gmail, user, fromEmail, subject,
+                                    "Hi! We received your email but couldn't find a valid photo attachment. " +
+                                            "Please attach a JPG, PNG, or HEIC photo and try again.");
+                        }
                         markAsRead(gmail, user, messageSummary.getId());
                         continue;
                     }
 
-                    boolean foundImage = false;
-                    for (MessagePart part : parts) {
-                        String mimeType = part.getMimeType();
-                        if (!isAllowedMimeType(mimeType))
-                            continue;
+                    int processedImages = 0;
+                    int duplicateImages = 0;
+                    int failedImages = 0;
+                    boolean skipReply = voiceGoogleSender;
+                    List<String> elkCountLines = new ArrayList<>();
 
-                        foundImage = true;
+                    for (MessagePart part : imageParts) {
+                        String mimeType = part.getMimeType();
                         String attachmentId = part.getBody().getAttachmentId();
                         String filename = part.getFilename();
+                        boolean assumeExifParsable = voiceGoogleSender;
 
                         // Download attachment
                         var attachment = gmail.users().messages().attachments()
@@ -150,7 +172,7 @@ public class EmailProcessor {
                             Files.write(tempFile, imageBytes);
 
                             // Run through instant pipeline
-                            Metadata meta = db.loadMetadata(tempFile.toFile());
+                            Metadata meta = db.loadMetadata(tempFile.toFile(), assumeExifParsable);
                             meta.processed_status = false;
                             String objectName = meta.sha256 + ".jpg";
 
@@ -159,19 +181,18 @@ public class EmailProcessor {
                                 Metadata existing = db.getImageByHash(conn, meta.sha256);
                                 if (existing != null) {
                                     System.out.println("[EmailProcessor] Duplicate image, skipping: " + meta.sha256);
-                                    sendReply(gmail, user, fromEmail, subject,
-                                            "It looks like we've already received this photo! " +
-                                                    "It's already in the PERC database.");
-                                    break;
+                                    duplicateImages++;
+                                    continue;
                                 }
 
                                 // Upload to GCS
                                 GoogleCloudStorageAPI.uploadFile(tempFile.toString(), objectName);
                                 meta.cloud_uri = "gs://" + SecretConfig.getRequired("GCS_BUCKET_NAME")
                                         + "/" + objectName;
-                                meta.filename = (filename != null && !filename.isBlank())
-                                        ? filename
-                                        : "email-upload" + ext;
+                                meta.filename = (filename != null && !filename.isBlank()
+                                        && !"noname".equalsIgnoreCase(filename))
+                                                ? filename
+                                                : "email-upload" + ext;
 
                                 db.insertMeta(conn, meta);
 
@@ -204,6 +225,7 @@ public class EmailProcessor {
                                                 + meta.filename + ": " + detectionError.getMessage());
                                         meta.elk_count = null;
                                         meta.processed_status = false;
+                                        failedImages++;
                                     }
                                 }
 
@@ -212,25 +234,9 @@ public class EmailProcessor {
                                         + (meta.elk_count != null ? meta.elk_count : "unknown"));
                             }
 
-                            // Build reply based on GPS
-                            String reply;
-                            if (meta.gps_flag) {
-                                String lat = String.format("%.5f", meta.latitude);
-                                String lon = String.format("%.5f", meta.longitude);
-                                String when = (meta.datetime != null) ? meta.datetime : "unknown time";
-                                String weather = (meta.weather_desc != null)
-                                        ? " Weather at time of photo: " + meta.weather_desc + "."
-                                        : "";
-                                reply = "Thanks! Your photo has been received and logged. " +
-                                        "Location: " + lat + ", " + lon + " at " + when + "." +
-                                        weather + " We'll scan it for elk activity shortly.";
-                            } else {
-                                reply = "Thanks for your photo! We received it, but couldn't detect " +
-                                        "a GPS location. Could you reply with your approximate " +
-                                        "coordinates or ranch name so we can log it accurately?";
-                            }
-
-                            sendReply(gmail, user, fromEmail, subject, reply);
+                            elkCountLines.add(meta.filename + " : elk count = "
+                                    + (meta.elk_count != null ? meta.elk_count : "unknown"));
+                            processedImages++;
                             processed++;
 
                         } finally {
@@ -238,11 +244,40 @@ public class EmailProcessor {
                         }
                     }
 
-                    if (!foundImage) {
-                        // Email had attachments but none were images
-                        sendReply(gmail, user, fromEmail, subject,
-                                "Hi! We received your email but couldn't find a valid image attachment. " +
-                                        "Please attach a JPG, PNG, or HEIC photo and try again.");
+                    if (!skipReply) {
+                        StringBuilder replyBuilder = new StringBuilder();
+                        if (processedImages > 0 && duplicateImages == 0 && failedImages == 0) {
+                            replyBuilder.append("Thanks! Your photo(s) have been received and logged. ");
+                        } else if (processedImages > 0) {
+                            replyBuilder.append("Thanks! We received your email and processed ")
+                                    .append(processedImages)
+                                    .append(" photo(s). ")
+                                    .append(duplicateImages > 0 ? "Some attachments were already in the database. "
+                                            : "")
+                                    .append(failedImages > 0 ? "Some attachments could not be processed. " : "");
+                        } else if (duplicateImages > 0) {
+                            replyBuilder.append("It looks like we've already received the photo(s) in this email. ")
+                                    .append("They're already in the PERC database.");
+                        } else {
+                            replyBuilder
+                                    .append("Hi! We received your email but couldn't process any photo attachments. ")
+                                    .append("Please try sending JPG, PNG, or HEIC images.");
+                        }
+
+                        if (processedImages > 0) {
+                            replyBuilder.append("\n\nElk counts by image:\n");
+                            for (String line : elkCountLines) {
+                                replyBuilder.append(line).append("\n");
+                            }
+                            if (duplicateImages > 0) {
+                                replyBuilder.append("Some attachments were duplicates and were skipped.\n");
+                            }
+                            if (failedImages > 0) {
+                                replyBuilder.append("Some attachments could not be processed.\n");
+                            }
+                        }
+
+                        sendReply(gmail, user, fromEmail, subject, replyBuilder.toString());
                     }
 
                     // Mark as read regardless of outcome
@@ -313,6 +348,49 @@ public class EmailProcessor {
             }
         }
         return null;
+    }
+
+    private static String extractEmailAddress(String headerValue) {
+        if (headerValue == null) {
+            return null;
+        }
+
+        int start = headerValue.indexOf('<');
+        int end = headerValue.indexOf('>');
+        if (start >= 0 && end > start) {
+            return headerValue.substring(start + 1, end).trim();
+        }
+
+        String trimmed = headerValue.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static void collectImageAttachmentParts(MessagePart part, List<MessagePart> imageParts,
+            boolean attachmentsOnly) {
+        if (part == null) {
+            return;
+        }
+
+        List<MessagePart> children = part.getParts();
+        if (children != null && !children.isEmpty()) {
+            for (MessagePart child : children) {
+                collectImageAttachmentParts(child, imageParts, attachmentsOnly);
+            }
+            return;
+        }
+
+        String mimeType = part.getMimeType();
+        if (!isAllowedMimeType(mimeType)) {
+            return;
+        }
+
+        if (attachmentsOnly && (part.getBody() == null || part.getBody().getAttachmentId() == null)) {
+            return;
+        }
+
+        if (part.getBody() != null && part.getBody().getAttachmentId() != null) {
+            imageParts.add(part);
+        }
     }
 
     private static boolean isAllowedMimeType(String mimeType) {

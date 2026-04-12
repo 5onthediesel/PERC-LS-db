@@ -116,7 +116,7 @@ public class MessagingController {
                 }
 
                 GoogleCloudStorageAPI.uploadFile(tempFile.toString(), objectName);
-                meta.cloud_uri = "gs://" + "cs370perc-bucket" + "/" + objectName;
+                meta.cloud_uri = "gs://" + "postgresperc-bucket" + "/" + objectName;
                 db.insertMeta(conn, meta);
             }
 

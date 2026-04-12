@@ -36,8 +36,8 @@ class db {
 
     static void setupSchema(Connection conn, boolean resetTable) throws SQLException {
         try (Statement s = conn.createStatement()) {
-            s.execute("create schema if not exists cs370");
-            s.execute("set search_path to cs370");
+            s.execute("create schema if not exists postgres");
+            s.execute("set search_path to postgres");
 
             if (resetTable) {
                 s.execute("drop table if exists images");
@@ -113,6 +113,10 @@ class db {
     }
 
     static Metadata loadMetadata(File f) throws Exception {
+        return loadMetadata(f, false);
+    }
+
+    static Metadata loadMetadata(File f, boolean assumeExifParsable) throws Exception {
         Metadata meta = new Metadata();
         ImageUtils.ExifData d;
         String ext = ImageUtils.getExtension(f.getName()).toLowerCase();
@@ -121,7 +125,15 @@ class db {
             if (d == null)
                 d = new ImageUtils.ExifData();
         } else {
-            d = ImageUtils.parse(f.getAbsolutePath());
+            try {
+                d = ImageUtils.parse(f.getAbsolutePath());
+            } catch (Exception e) {
+                if (!assumeExifParsable) {
+                    throw e;
+                }
+                logger.log(Level.FINE, "Ignoring EXIF parse failure for " + f.getName() + ": " + e.getMessage());
+                d = new ImageUtils.ExifData();
+            }
         }
 
         meta.filename = f.getName();
@@ -256,7 +268,7 @@ class db {
     }
 
     static void insertMeta(Connection conn, Metadata meta) throws SQLException {
-        String sql = "insert into cs370.images (" +
+        String sql = "insert into postgres.images (" +
                 "img_hash, filename, gps_flag, latitude, longitude, altitude, datetime_taken, " +
                 "cloud_uri, width, height, filesize_bytes, temperature_c, humidity, weather_desc, elk_count, processed_status) "
                 +
@@ -298,7 +310,7 @@ class db {
     static List<Metadata> getUnprocessedImages(Connection conn, int batchSize) throws SQLException {
         List<Metadata> results = new ArrayList<>();
 
-        String sql = "SELECT * FROM cs370.images " +
+        String sql = "SELECT * FROM postgres.images " +
                 "WHERE processed_status = false " +
                 "ORDER BY datetime_uploaded ASC " +
                 "LIMIT ?";
@@ -324,7 +336,7 @@ class db {
      * static int updateProcessedMetadata(Connection conn, String hash, Metadata
      * meta)
      * throws SQLException {
-     * String sql = "UPDATE cs370.images SET " +
+     * String sql = "UPDATE postgres.images SET " +
      * "filename = ?, " +
      * "filesize_bytes = ?, " +
      * "width = ?, " +
@@ -401,7 +413,7 @@ class db {
     // Retrieve a specific image's metadata by its SHA-256 hash
     // Example: Metadata img = getImageByHash(conn, "a3f2b9c8d1e5...");
     static Metadata getImageByHash(Connection conn, String hash) throws SQLException {
-        String sql = "SELECT * FROM cs370.images WHERE img_hash = ? AND processed_status = true";
+        String sql = "SELECT * FROM postgres.images WHERE img_hash = ? AND processed_status = true";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, hash);
@@ -421,7 +433,7 @@ class db {
             throws SQLException {
         List<Metadata> results = new ArrayList<>();
 
-        String sql = "SELECT * FROM cs370.images " +
+        String sql = "SELECT * FROM postgres.images " +
                 "WHERE datetime_taken >= ?::date " +
                 "AND datetime_taken < (?::date + interval '1 day') " +
                 "AND processed_status = true " +
@@ -458,7 +470,7 @@ class db {
                 "      cos(radians(longitude) - radians(?)) + " +
                 "      sin(radians(?)) * sin(radians(latitude)) " +
                 "    )) AS distance_km " +
-                "  FROM cs370.images " +
+                "  FROM postgres.images " +
                 "  WHERE gps_flag = true " +
                 "    AND latitude IS NOT NULL " +
                 "    AND longitude IS NOT NULL " +
@@ -490,7 +502,7 @@ class db {
      * SQLException {
      * List<Metadata> results = new ArrayList<>();
      *
-     * String sql = "SELECT * FROM cs370.images " +
+     * String sql = "SELECT * FROM postgres.images " +
      * "WHERE processed_status = true " +
      * "ORDER BY datetime_uploaded DESC " +
      * "LIMIT ?";
@@ -553,7 +565,7 @@ class db {
      */
     static void updateMetaWithDetection(Connection conn, String sha256Hash, Integer elkCount, boolean processedStatus)
             throws SQLException {
-        String sql = "UPDATE cs370.images SET elk_count = ?, processed_status = ? WHERE img_hash = ?";
+        String sql = "UPDATE postgres.images SET elk_count = ?, processed_status = ? WHERE img_hash = ?";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setObject(1, elkCount, Types.INTEGER);

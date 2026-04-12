@@ -4,11 +4,12 @@ set -euo pipefail
 # Cloud Run deployment script using production secrets with Cloud Run mount paths (/secrets/)
 # For local testing with relative paths (./secrets/), use ./local_testing.sh instead
 
-PROJECT_ID="cs370-perc"
+PROJECT_ID="perc-elk-detection"
 REGION="us-central1"
-SERVICE_NAME="java-backend"
-IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/java-backend/java-backend:latest"
-CLOUD_SQL_INSTANCE="cs370perc:us-east1:cs370-perc-sql"
+ARTIFACT_REPOSITORY="perc-elk-detection-artifact-registry"
+CLOUD_RUN_SERVICE_NAME="perc-elk-detection-gcloud-run-service"
+IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/${ARTIFACT_REPOSITORY}:latest"
+CLOUD_SQL_INSTANCE="perc-elk-detection:us-central1:perc-elk-detection-gcloud-sql-instance"
 
 # Local files in your repo that should never be committed.
 APP_SECRETS_FILE="./secrets/app-secrets.json"
@@ -79,11 +80,12 @@ gcloud secrets versions add "${GMAIL_TOKEN_SECRET_NAME}" --data-file="${GMAIL_TO
 gcloud builds submit --tag "${IMAGE_URI}" .
 
 # Deploy Cloud Run and mount secrets as files in separate directories.
-gcloud run deploy "${SERVICE_NAME}" \
+gcloud run deploy "${CLOUD_RUN_SERVICE_NAME}" \
   --image "${IMAGE_URI}" \
   --platform managed \
   --region "${REGION}" \
+  --concurrency 1 \
   --allow-unauthenticated \
   --add-cloudsql-instances "${CLOUD_SQL_INSTANCE}" \
   --set-secrets=/secrets/app-secrets/app-secrets.json="${APP_SECRETS_SECRET_NAME}":latest,/secrets/service-account/service-account.json="${SERVICE_ACCOUNT_SECRET_NAME}":latest,/secrets/gmail-credentials/gmail-credentials.json="${GMAIL_CREDENTIALS_SECRET_NAME}":latest,/secrets/gmail-token/StoredCredential="${GMAIL_TOKEN_SECRET_NAME}":latest \
-  --set-env-vars APP_SECRETS_PATH=/secrets/app-secrets/app-secrets.json
+  --set-env-vars APP_SECRETS_PATH=/secrets/app-secrets/app-secrets.json,GMAIL_CREDENTIALS_PATH=/secrets/gmail-credentials/gmail-credentials.json,GMAIL_TOKEN_PATH=/secrets/gmail-token

@@ -30,7 +30,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class FileProcessor {
 
     private static final Logger logger = Logger.getLogger(FileProcessor.class.getName());
-    private static final String BUCKET_NAME = "cs370perc-bucket";
+    private static final String BUCKET_NAME = "postgresperc-bucket";
     private static final String[] ALLOWED_EXTENSIONS = { ".png", ".jpg", ".jpeg", ".heic" };
 
     private static class UploadMetadataData {

@@ -7,12 +7,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReadParam;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 
 /**
  * AnimalDetectAPI client for wildlife detection.
@@ -179,12 +180,16 @@ public class AnimalDetectAPI {
 
     /**
      * Compress image for upload if it's too large.
+     * BufferedImage objects are explicitly nulled after use to allow the GC
+     * to reclaim large pixel buffers as early as possible, which is important
+     * when processing many images sequentially in a memory-constrained environment.
      */
     public byte[] compressImageForUpload(byte[] imageBytes, String filename, int maxSide, int quality)
             throws Exception {
-
-        BufferedImage img = ImageIO.read(new ByteArrayInputStream(imageBytes));
-        img = convertToRGB(img);
+        BufferedImage img = readScaledImageForCompression(imageBytes, maxSide);
+        if (img == null) {
+            throw new IllegalArgumentException("Unsupported or corrupt image payload");
+        }
 
         int width = img.getWidth();
         int height = img.getHeight();
@@ -198,20 +203,69 @@ public class AnimalDetectAPI {
             java.awt.Graphics2D g2d = resized.createGraphics();
             g2d.drawImage(img, 0, 0, newWidth, newHeight, null);
             g2d.dispose();
+
+            // Null the original decoded image immediately after drawing — it can be
+            // very large (e.g. 4000x3000x4 bytes = ~46MB) and is no longer needed.
+            // This lets the GC reclaim it before we encode the resized copy.
+            img = null;
+            System.gc();
+
             img = resized;
         }
 
+        img = convertToRGB(img);
+
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         javax.imageio.ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
-        javax.imageio.ImageWriteParam param = writer.getDefaultWriteParam();
-        param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
-        param.setCompressionQuality(quality / 100f);
+        try {
+            javax.imageio.ImageWriteParam param = writer.getDefaultWriteParam();
+            param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+            param.setCompressionQuality(quality / 100f);
 
-        writer.setOutput(ImageIO.createImageOutputStream(out));
-        writer.write(null, new javax.imageio.IIOImage(img, null, null), param);
-        writer.dispose();
+            try (javax.imageio.stream.ImageOutputStream imageOut = ImageIO.createImageOutputStream(out)) {
+                writer.setOutput(imageOut);
+                writer.write(null, new javax.imageio.IIOImage(img, null, null), param);
+            }
 
-        return out.toByteArray();
+            // Null the final image after encoding — the encoded bytes are all we need now.
+            img = null;
+            System.gc();
+
+            return out.toByteArray();
+        } finally {
+            writer.dispose();
+        }
+    }
+
+    private BufferedImage readScaledImageForCompression(byte[] imageBytes, int maxSide) throws IOException {
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(imageBytes))) {
+            if (input == null) {
+                return null;
+            }
+
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                return ImageIO.read(new ByteArrayInputStream(imageBytes));
+            }
+
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, true, true);
+                int srcWidth = reader.getWidth(0);
+                int srcHeight = reader.getHeight(0);
+                int longest = Math.max(srcWidth, srcHeight);
+
+                ImageReadParam param = reader.getDefaultReadParam();
+                if (longest > maxSide) {
+                    int subsample = Math.max(1, (int) Math.ceil(longest / (double) maxSide));
+                    param.setSourceSubsampling(subsample, subsample, 0, 0);
+                }
+
+                return reader.read(0, param);
+            } finally {
+                reader.dispose();
+            }
+        }
     }
 
     private PreparedUploadImage prepareImageForPayloadLimit(byte[] imageBytes, String filename) throws Exception {
@@ -224,26 +278,56 @@ public class AnimalDetectAPI {
             return new PreparedUploadImage(imageBytes, safeFilename);
         }
 
-        int[][] strictSteps = {
-                { 2200, 92 },
-                { 1800, 85 },
-                { 1400, 78 },
-                { 1100, 70 },
-                { 900, 62 },
-                { 720, 55 }
-        };
+        // Estimate the scale factor needed to hit the target size.
+        // We use sqrt because area (pixels) scales as the square of linear dimensions.
+        // Apply a 0.85 safety margin since JPEG compression isn't perfectly linear.
+        double ratio = (double) PRACTICAL_RAW_LIMIT_BYTES / imageBytes.length;
+        double scale = Math.sqrt(ratio) * 0.85;
 
-        for (int[] step : strictSteps) {
-            byte[] compressed = compressImageForUpload(imageBytes, safeFilename, step[0], step[1]);
-            if (compressed.length <= PRACTICAL_RAW_LIMIT_BYTES) {
-                logger.info("Compressed oversized image from " + (imageBytes.length / 1024) + " KB to "
-                        + (compressed.length / 1024) + " KB to satisfy practical raw limit (~1.1MB)");
-                return new PreparedUploadImage(compressed, toCompressedFilename(safeFilename));
-            }
+        // Read just the image dimensions without fully decoding the pixel buffer.
+        int[] dims = readImageDimensions(imageBytes);
+        int longestSide = Math.max(dims[0], dims[1]);
+        int targetMaxSide = Math.max(256, (int) (longestSide * scale));
+        int targetQuality = 82; // balanced default
+
+        logger.info("Dynamic compression: " + longestSide + "px → " + targetMaxSide +
+                "px side (ratio=" + String.format("%.2f", ratio) + ", scale=" + String.format("%.2f", scale) + ")");
+
+        byte[] compressed = compressImageForUpload(imageBytes, safeFilename, targetMaxSide, targetQuality);
+
+        // One safety retry if the estimate was slightly off (e.g. very noisy image).
+        if (compressed.length > PRACTICAL_RAW_LIMIT_BYTES) {
+            logger.warning("Dynamic estimate overshot, applying single safety retry at 90% of target side");
+            int fallbackSide = Math.max(256, (int) (targetMaxSide * 0.90));
+            compressed = compressImageForUpload(imageBytes, safeFilename, fallbackSide, 72);
         }
 
-        throw new IllegalArgumentException(
-                "Image is too large: unable to shrink under practical raw limit (~1.1MB) required by Vertex encoded request cap");
+        if (compressed.length > PRACTICAL_RAW_LIMIT_BYTES) {
+            throw new IllegalArgumentException(
+                    "Image is too large: unable to shrink under practical raw limit (~1.1MB)");
+        }
+
+        System.gc();
+        logger.info("Compressed oversized image from " + (imageBytes.length / 1024) + " KB to "
+                + (compressed.length / 1024) + " KB");
+        return new PreparedUploadImage(compressed, toCompressedFilename(safeFilename));
+    }
+
+    // Read image dimensions without decoding the full pixel buffer into heap.
+    private int[] readImageDimensions(byte[] imageBytes) throws IOException {
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(imageBytes))) {
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                return new int[] { 1920, 1080 }; // safe fallback
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, true, true);
+                return new int[] { reader.getWidth(0), reader.getHeight(0) };
+            } finally {
+                reader.dispose();
+            }
+        }
     }
 
     private String toCompressedFilename(String filename) {
@@ -256,6 +340,9 @@ public class AnimalDetectAPI {
      * Convert image to RGB if needed.
      */
     private BufferedImage convertToRGB(BufferedImage img) {
+        if (img == null) {
+            throw new IllegalArgumentException("Image decode returned null");
+        }
         if (img.getType() == BufferedImage.TYPE_INT_RGB) {
             return img;
         }
@@ -263,6 +350,12 @@ public class AnimalDetectAPI {
         java.awt.Graphics2D g2d = rgbImage.createGraphics();
         g2d.drawImage(img, 0, 0, null);
         g2d.dispose();
+
+        // Null the original so GC can reclaim it — convertToRGB is called just before
+        // JPEG encoding, so both the original and RGB copy would otherwise coexist.
+        img = null;
+        System.gc();
+
         return rgbImage;
     }
 

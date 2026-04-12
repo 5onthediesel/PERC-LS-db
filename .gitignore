@@ -5,3 +5,4 @@ target/
 *.key.json
 database/local-testing-secrets.json
 database/secrets/
+.old_keys/
