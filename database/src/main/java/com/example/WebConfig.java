@@ -11,10 +11,10 @@ class WebConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
                 .allowedOrigins(
-                    "http://localhost:3000",
-                    "http://localhost:3001",
-                    "https://cs370-perc.web.app",
-                    "https://cs370-perc.firebaseapp.com")
+                        "http://localhost:3000",
+                        "http://localhost:3001",
+                        "https://perc-elk-detection-48336.web.app",
+                        "https://perc-elk-detection-48336.firebaseapp.com")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*");
     }

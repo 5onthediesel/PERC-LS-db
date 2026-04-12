@@ -20,6 +20,10 @@ public final class SecretConfig {
     }
 
     public static String get(String key) {
+        String envValue = normalize(System.getenv(key));
+        if (envValue != null) {
+            return envValue;
+        }
         return normalize(FILE_SECRETS.get(key));
     }
 
