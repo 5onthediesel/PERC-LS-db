@@ -1,2 +1,0 @@
-id,img_hash,cloud_uri,filename,filesize_bytes,width,height,gps_flag,datetime_uploaded
-6,d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4,gs://cs370perc-bucket/d606a40940a90f6dd58bbd827d8980a765105bdce0509416409a18dcd946d2e4.jpg,test_image_copy_58622d11-8606-404d-a27d-752faa3fc960.jpg,2048777,4000,3000,t,2026-02-10 13:24:15.784219-05

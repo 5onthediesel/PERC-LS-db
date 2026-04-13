@@ -77,8 +77,17 @@ public class FileProcessor {
     }
 
     private static class PythonInferenceClient {
-        private final RestClient restClient;
 
+        /**
+         * Inputs:      builder (RestClient.Builder) — Spring RestClient builder
+         * Outputs:     PythonInferenceClient instance pointing at http://localhost:8000
+         * Functionality: Constructs a RestClient forced to HTTP/1.1 to avoid h2c upgrade issues
+         *               with the local Uvicorn inference server.
+         * Dependencies: org.springframework.web.client.RestClient,
+         *               org.springframework.http.client.JdkClientHttpRequestFactory,
+         *               java.net.http.HttpClient
+         * Called by:   processAllUnprocessedWithPythonInference
+         */
         PythonInferenceClient(RestClient.Builder builder) {
             // Force HTTP/1.1 to avoid h2c upgrade issues with Uvicorn.
             HttpClient httpClient = HttpClient.newBuilder()
@@ -93,6 +102,16 @@ public class FileProcessor {
                     .build();
         }
 
+        private final RestClient restClient;
+
+        /**
+         * Inputs:      imageBytes (byte[]) — raw JPEG image bytes
+         * Outputs:     Integer — elk count returned by the inference server, or null on failure
+         * Functionality: POSTs image bytes to the local Python inference server at /infer and
+         *               parses the integer count from the plain-text response.
+         * Dependencies: org.springframework.web.client.RestClient
+         * Called by:   inferCounts
+         */
         Integer inferCount(byte[] imageBytes) {
             try {
                 String response = restClient.post()
@@ -112,6 +131,13 @@ public class FileProcessor {
             }
         }
 
+        /**
+         * Inputs:      images (List<ImagePayload>) — list of filename + bytes pairs
+         * Outputs:     List<Integer> — elk counts in the same order as the input list (null for failures)
+         * Functionality: Sequentially calls inferCount for each image and collects the results.
+         * Dependencies: inferCount
+         * Called by:   processAllUnprocessedWithPythonInference
+         */
         List<Integer> inferCounts(List<ImagePayload> images) {
             List<Integer> counts = new ArrayList<>();
             for (ImagePayload img : images) {
@@ -122,6 +148,19 @@ public class FileProcessor {
         }
     }
 
+    /**
+     * Inputs:      files (MultipartFile[]) — uploaded image files;
+     *              metadataJson (String) — optional JSON array of per-file metadata (may be null)
+     * Outputs:     List<Map<String, Object>> — one entry per file with upload status, cloud URI,
+     *              SHA-256 hash, elk count, and metadata fields
+     * Functionality: Validates files, parses optional metadata, uploads each image to GCS, inserts
+     *               a DB record, runs AnimalDetect, and updates the elk count — all in one synchronous pass.
+     * Dependencies: validateUploadedFiles, parseUploadMetadata, buildMetadataForUpload,
+     *               db.connect, db.getImageByHash, db.insertMeta, db.updateMetaWithDetection,
+     *               GoogleCloudStorageAPI.uploadFile, AnimalDetectAPI, ImageUtils
+     * Called by:   FileUploadController.uploadFileInstantProcessed,
+     *              MessagingController.sendImageTest
+     */
     public static List<Map<String, Object>> uploadAndProcessFiles(
             MultipartFile[] files,
             String metadataJson) throws Exception {
@@ -230,14 +269,26 @@ public class FileProcessor {
         return uploadedFiles;
     }
 
+    /**
+     * Inputs:      None
+     * Outputs:     BatchResult — counts of attempted, processed, and error messages
+     * Functionality: Public alias for processAllUnprocessedWithAnimalDetect; processes the full
+     *               backlog of unprocessed images using the AnimalDetect API.
+     * Dependencies: processAllUnprocessedWithAnimalDetect
+     * Called by:   External callers that prefer the generic "batch" naming
+     */
     public static BatchResult processUnprocessedBatch() {
         return processAllUnprocessedWithAnimalDetect();
     }
 
     /**
-     * Backlog processor that uses the custom Python model endpoint.
-     * Keep this separate from AnimalDetect flow so you can swap/iterate model
-     * behavior independently.
+     * Inputs:      None
+     * Outputs:     BatchResult — counts of attempted, processed, and per-image error messages
+     * Functionality: Fetches all unprocessed images from GCS, sends them to the local Python
+     *               inference server in batch, and writes elk counts back to the database.
+     * Dependencies: db.connect, db.getUnprocessedImages, db.updateMetaWithDetection,
+     *               PythonInferenceClient, downloadFromCloudUri, ImageUtils, SecretConfig
+     * Called by:   Not currently wired to a scheduled trigger; available for manual invocation
      */
     public static BatchResult processAllUnprocessedWithPythonInference() {
         PythonInferenceClient inferenceClient = new PythonInferenceClient(RestClient.builder());
@@ -307,6 +358,14 @@ public class FileProcessor {
         }
     }
 
+    /**
+     * Inputs:      files (MultipartFile[]) — array of uploaded files to validate
+     * Outputs:     void — throws IllegalArgumentException if any file is missing or has a disallowed extension
+     * Functionality: Ensures at least one file is present and that every file has an allowed image extension
+     *               (.png, .jpg, .jpeg, .heic).
+     * Dependencies: isAllowedImageName
+     * Called by:   uploadAndProcessFiles
+     */
     private static void validateUploadedFiles(MultipartFile[] files) {
         if (files == null || files.length == 0) {
             throw new IllegalArgumentException("At least one image file is required");
@@ -320,6 +379,15 @@ public class FileProcessor {
         }
     }
 
+    /**
+     * Inputs:      files (MultipartFile[]) — uploaded files (used only for length validation);
+     *              metadataJson (String) — JSON array of UploadMetadataData objects (may be null or blank)
+     * Outputs:     List<UploadMetadataData> — parsed metadata list, or an empty list if no JSON was provided
+     * Functionality: Deserializes the optional per-file metadata JSON and validates that its length matches
+     *               the number of uploaded files.
+     * Dependencies: com.fasterxml.jackson.databind.ObjectMapper
+     * Called by:   uploadAndProcessFiles
+     */
     private static List<UploadMetadataData> parseUploadMetadata(MultipartFile[] files, String metadataJson)
             throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
@@ -335,6 +403,17 @@ public class FileProcessor {
         return metadataList;
     }
 
+    /**
+     * Inputs:      tempFile (Path) — path to the temporary file on disk;
+     *              originalName (String) — original client-provided filename;
+     *              uploadData (UploadMetadataData) — optional parsed metadata (may be null);
+     *              fileIndex (int) — zero-based index used in error messages for mismatched filenames
+     * Outputs:     Metadata — partially populated Metadata object (cloud_uri is empty; elk_count is null)
+     * Functionality: Combines file-derived values (size, SHA-256) with caller-supplied metadata (GPS,
+     *               dimensions, datetime, weather) into a Metadata object ready for DB insertion.
+     * Dependencies: ImageUtils.sha256, ImageUtils.getExtension, java.nio.file.Files
+     * Called by:   uploadAndProcessFiles
+     */
     private static Metadata buildMetadataForUpload(
             Path tempFile,
             String originalName,
@@ -376,6 +455,13 @@ public class FileProcessor {
         return meta;
     }
 
+    /**
+     * Inputs:      filename (String) — file name to check (may be null)
+     * Outputs:     boolean — true if the filename ends with an allowed image extension
+     * Functionality: Case-insensitive suffix check against the ALLOWED_EXTENSIONS list.
+     * Dependencies: None
+     * Called by:   validateUploadedFiles
+     */
     private static boolean isAllowedImageName(String filename) {
         if (filename == null || filename.isBlank()) {
             return false;
@@ -389,6 +475,14 @@ public class FileProcessor {
         return false;
     }
 
+    /**
+     * Inputs:      ext (String) — raw file extension without a leading dot (e.g. "jpg", "png")
+     * Outputs:     String — normalized extension with a leading dot (e.g. ".jpeg", ".png", ".bin")
+     * Functionality: Normalizes "jpg" and "jpeg" to ".jpeg" and prepends "." to other extensions;
+     *               returns ".bin" for null or blank input.
+     * Dependencies: None
+     * Called by:   uploadAndProcessFiles
+     */
     private static String normalizedStorageExtension(String ext) {
         if (ext == null || ext.isBlank()) {
             return ".bin";
@@ -399,6 +493,16 @@ public class FileProcessor {
         return "." + ext;
     }
 
+    /**
+     * Inputs:      fileInfo (Map<String, Object>) — map to populate in place;
+     *              meta (Metadata) — source of metadata values to copy into the map
+     * Outputs:     void — adds metadata fields (filename, size, dimensions, GPS, datetime, weather, elkCount)
+     *              to the map
+     * Functionality: Copies human-facing metadata fields from a Metadata object into a response map for
+     *               the upload API JSON response.
+     * Dependencies: None
+     * Called by:   uploadAndProcessFiles
+     */
     private static void addMetadataToFileInfo(Map<String, Object> fileInfo, Metadata meta) {
         fileInfo.put("filename", meta.filename);
         fileInfo.put("filesizeBytes", meta.filesize);
@@ -418,6 +522,16 @@ public class FileProcessor {
         fileInfo.put("elkCount", meta.elk_count);
     }
 
+    /**
+     * Inputs:      None
+     * Outputs:     BatchResult — counts of attempted, processed, and per-image error messages
+     * Functionality: Fetches all unprocessed images from GCS, runs each through AnimalDetect, and
+     *               writes elk counts back to the database; used by the weekly batch job and manual runs.
+     * Dependencies: db.connect, db.getUnprocessedImages, db.updateMetaWithDetection,
+     *               AnimalDetectAPI, downloadFromCloudUri, ImageUtils
+     * Called by:   processUnprocessedBatch, EventScheduler.runWeeklyInferenceBatch (commented out),
+     *              FileProcessor.main
+     */
     public static BatchResult processAllUnprocessedWithAnimalDetect() {
         int processedCount = 0;
         int attemptedCount = 0;
@@ -493,6 +607,16 @@ public class FileProcessor {
         }
     }
 
+    /**
+     * Inputs:      cloudUri (String) — gs:// URI of the object to download (e.g. "gs://bucket/object.jpeg");
+     *              destinationPath (Path) — local file path to write the downloaded bytes to
+     * Outputs:     void — writes the GCS object to destinationPath
+     * Functionality: Parses the gs:// URI to extract bucket and object name, authenticates with GCS
+     *               using credentials from SecretConfig, and downloads the blob to the given path.
+     * Dependencies: com.google.cloud.storage.Storage, com.google.auth.oauth2.GoogleCredentials,
+     *               SecretConfig, java.nio.file.Files
+     * Called by:   processAllUnprocessedWithAnimalDetect, processAllUnprocessedWithPythonInference
+     */
     private static void downloadFromCloudUri(String cloudUri, Path destinationPath) throws Exception {
         if (!cloudUri.startsWith("gs://")) {
             throw new IllegalArgumentException("Unsupported cloud_uri: " + cloudUri);
@@ -525,6 +649,14 @@ public class FileProcessor {
         blob.downloadTo(destinationPath);
     }
 
+    /**
+     * Inputs:      args (String[]) — unused command-line arguments
+     * Outputs:     void — prints batch results and errors to stdout/stderr
+     * Functionality: Standalone entry point for running the AnimalDetect batch processor from the
+     *               command line without starting the full Spring Boot server.
+     * Dependencies: processAllUnprocessedWithAnimalDetect
+     * Called by:   JVM when run directly (e.g. mvn exec:java -Dexec.mainClass=com.example.FileProcessor)
+     */
     public static void main(String[] args) {
         BatchResult result = processAllUnprocessedWithAnimalDetect();
         System.out.println("attempted=" + result.attempted + ", processed=" + result.processed);

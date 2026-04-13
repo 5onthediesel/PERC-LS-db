@@ -15,36 +15,20 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api")
-// @CrossOrigin(origins = "http://localhost:3000") // Switched to global CORS
 public class ImageStatsController {
 
     /**
-     * Returns image upload counts grouped by date.
-     * Used by the frontend Dashboard page to render the bar chart.
-     *
-     * Response format:
-     * {
-     * "uploadsByDate": [
-     * { "date": "2026-02-07", "count": 3 },
-     * { "date": "2026-02-10", "count": 5 },
-     * ...
-     * ],
-     * "total": 8
-     * }
-     */
-    /**
-     * Returns image upload counts grouped by date, plus GPS coverage stats.
-     *
-     * Response format:
-     * {
-     * "uploadsByDate": [
-     * { "date": "2026-02-07", "count": 3 },
-     * ...
-     * ],
-     * "total": 8,
-     * "withGps": 5,
-     * "withoutGps": 3
-     * }
+     * Inputs:      None (HTTP GET /api/images/summary)
+     * Outputs:     ResponseEntity<?> — 200 OK with a JSON object containing:
+     *                "uploadsByDate" (list of {date, count, elkTotal}),
+     *                "total" (int), "withGps" (int), "withoutGps" (int),
+     *                "totalElk" (int), "processedCount" (int);
+     *              500 Internal Server Error on DB failure
+     * Functionality: Aggregates three DB queries — daily upload counts with elk totals, GPS coverage
+     *               counts, and processed image count — into a single summary response for the frontend dashboard.
+     * Dependencies: db.connect, java.sql.PreparedStatement, java.sql.ResultSet,
+     *               org.springframework.http.ResponseEntity
+     * Called by:   HTTP clients (frontend dashboard) via GET /api/images/summary
      */
     @GetMapping("/images/summary")
     public ResponseEntity<?> getImagesSummary() {
@@ -120,17 +104,15 @@ public class ImageStatsController {
     }
 
     /**
-     * Returns all images that have GPS coordinates.
-     * Used by the frontend Dashboard page to plot observation locations on the map.
-     *
-     * Response format:
-     * {
-     * "locations": [
-     * { "filename": "IMG_3141.jpg", "latitude": 33.79, "longitude": -84.33,
-     * "altitude": 958.6, "datetimeTaken": "2026-02-07T21:18:06" },
-     * ...
-     * ]
-     * }
+     * Inputs:      None (HTTP GET /api/images/locations)
+     * Outputs:     ResponseEntity<?> — 200 OK with JSON {"locations": [{filename, latitude, longitude,
+     *              altitude, datetimeTaken, elkCount}, ...]}, ordered by datetime_taken DESC;
+     *              500 Internal Server Error on DB failure
+     * Functionality: Returns all images that have GPS coordinates so the frontend map can plot
+     *               observation locations with elk count markers.
+     * Dependencies: db.connect, java.sql.PreparedStatement, java.sql.ResultSet,
+     *               org.springframework.http.ResponseEntity
+     * Called by:   HTTP clients (frontend dashboard map view) via GET /api/images/locations
      */
     @GetMapping("/images/locations")
     public ResponseEntity<?> getImageLocations() {

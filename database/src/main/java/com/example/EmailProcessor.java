@@ -38,8 +38,13 @@ public class EmailProcessor {
     };
 
     /**
-     * Builds an authorized Gmail client using OAuth2.
-     * First run opens browser for authorization, saves token for subsequent runs.
+     * Inputs:      None (reads GMAIL_CREDENTIALS_PATH and GMAIL_TOKEN_PATH from SecretConfig)
+     * Outputs:     Gmail — authorized Gmail API client
+     * Functionality: Builds an OAuth2-authorized Gmail service client, opening a local browser for
+     *               first-run authorization and caching the token for subsequent runs.
+     * Dependencies: com.google.api.services.gmail.Gmail, GoogleAuthorizationCodeFlow,
+     *               GoogleNetHttpTransport, FileDataStoreFactory, LocalServerReceiver, SecretConfig
+     * Called by:   pollAndProcess
      */
     private static Gmail buildGmailService() throws Exception {
         String credentialsPath = SecretConfig.getRequired("GMAIL_CREDENTIALS_PATH");
@@ -82,9 +87,16 @@ public class EmailProcessor {
     }
 
     /**
-     * Main polling method. Called by InferenceScheduler hourly.
-     * Finds unread emails with image attachments, processes them,
-     * replies to sender, marks as read.
+     * Inputs:      None
+     * Outputs:     void — side effects: uploads images to GCS, inserts DB records, sends email replies,
+     *              marks emails as read
+     * Functionality: Polls the Gmail inbox for unread emails with image attachments, runs each image
+     *               through the full pipeline (EXIF parsing, GCS upload, DB insert, AnimalDetect),
+     *               replies to the sender with elk counts, and marks messages as read.
+     * Dependencies: buildGmailService, AnimalDetectAPI, db.loadMetadata, db.connect, db.getImageByHash,
+     *               db.insertMeta, db.updateMetaWithDetection, GoogleCloudStorageAPI.uploadFile,
+     *               sendReply, markAsRead, collectImageAttachmentParts, SecretConfig
+     * Called by:   EventScheduler.runEmailPollingJob, TaskController.pollOnStartup
      */
     public static void pollAndProcess() {
         System.out.println("[EmailProcessor] Starting email poll...");
@@ -297,6 +309,14 @@ public class EmailProcessor {
         System.out.println("[EmailProcessor] Done. processed=" + processed + ", failed=" + failed);
     }
 
+    /**
+     * Inputs:      gmail (Gmail) — authorized Gmail client; user (String) — Gmail user ID ("me");
+     *              messageId (String) — ID of the message to mark as read
+     * Outputs:     void — removes the UNREAD label from the specified message
+     * Functionality: Calls the Gmail API to remove the UNREAD label, silently logging any errors.
+     * Dependencies: com.google.api.services.gmail.Gmail
+     * Called by:   pollAndProcess
+     */
     private static void markAsRead(Gmail gmail, String user, String messageId) {
         try {
             gmail.users().messages().modify(user, messageId,
@@ -308,6 +328,17 @@ public class EmailProcessor {
         }
     }
 
+    /**
+     * Inputs:      gmail (Gmail) — authorized Gmail client; user (String) — Gmail user ID ("me");
+     *              toEmail (String) — recipient address; originalSubject (String) — subject of the original email;
+     *              bodyText (String) — plain-text reply body
+     * Outputs:     void — sends a reply email via the Gmail API
+     * Functionality: Constructs a MimeMessage reply and sends it through the Gmail API, prepending "Re: "
+     *               to the subject if not already present.
+     * Dependencies: com.google.api.services.gmail.Gmail, jakarta.mail.Session,
+     *               jakarta.mail.internet.MimeMessage, java.util.Base64
+     * Called by:   pollAndProcess
+     */
     private static void sendReply(Gmail gmail, String user, String toEmail,
             String originalSubject, String bodyText) {
         try {
@@ -339,6 +370,14 @@ public class EmailProcessor {
         }
     }
 
+    /**
+     * Inputs:      message (Message) — full Gmail message object; headerName (String) — header to look up
+     * Outputs:     String — header value, or null if the header is not present
+     * Functionality: Searches the message payload headers for a case-insensitive name match and returns its value.
+     * Dependencies: com.google.api.services.gmail.model.Message,
+     *               com.google.api.services.gmail.model.MessagePartHeader
+     * Called by:   pollAndProcess
+     */
     private static String extractHeader(Message message, String headerName) {
         if (message.getPayload() == null || message.getPayload().getHeaders() == null)
             return null;
@@ -350,6 +389,13 @@ public class EmailProcessor {
         return null;
     }
 
+    /**
+     * Inputs:      headerValue (String) — raw From/To header value (e.g. "Name <addr@example.com>")
+     * Outputs:     String — bare email address, or the trimmed header value if no angle-bracket format is found
+     * Functionality: Extracts the email address from an RFC 2822 name-addr header value.
+     * Dependencies: None
+     * Called by:   pollAndProcess
+     */
     private static String extractEmailAddress(String headerValue) {
         if (headerValue == null) {
             return null;
@@ -365,6 +411,16 @@ public class EmailProcessor {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    /**
+     * Inputs:      part (MessagePart) — root or nested message part to inspect;
+     *              imageParts (List<MessagePart>) — accumulator list populated with matching parts;
+     *              attachmentsOnly (boolean) — if true, only parts with an attachmentId are included
+     * Outputs:     void — populates imageParts in place
+     * Functionality: Recursively walks the MIME tree of a Gmail message, collecting leaf parts whose
+     *               MIME type is an allowed image type and that have an attachment ID.
+     * Dependencies: com.google.api.services.gmail.model.MessagePart, isAllowedMimeType
+     * Called by:   pollAndProcess
+     */
     private static void collectImageAttachmentParts(MessagePart part, List<MessagePart> imageParts,
             boolean attachmentsOnly) {
         if (part == null) {
@@ -393,6 +449,13 @@ public class EmailProcessor {
         }
     }
 
+    /**
+     * Inputs:      mimeType (String) — MIME type string to check
+     * Outputs:     boolean — true if the MIME type is in the ALLOWED_MIME_TYPES list
+     * Functionality: Case-insensitive check of whether a MIME type represents an accepted image format.
+     * Dependencies: None
+     * Called by:   collectImageAttachmentParts
+     */
     private static boolean isAllowedMimeType(String mimeType) {
         if (mimeType == null)
             return false;

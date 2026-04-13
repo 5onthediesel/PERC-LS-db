@@ -11,10 +11,25 @@ import org.springframework.context.annotation.Bean;
 public class App {
 	private static final Logger logger = Logger.getLogger(App.class.getName());
 
+	/**
+	 * Inputs:      args (String[]) — command-line arguments passed to the JVM
+	 * Outputs:     void — launches the Spring Boot application context
+	 * Functionality: Entry point; bootstraps the entire Spring Boot application.
+	 * Dependencies: org.springframework.boot.SpringApplication
+	 * Called by:   JVM on startup
+	 */
 	public static void main(String[] args) {
 		SpringApplication.run(App.class, args);
 	}
 
+	/**
+	 * Inputs:      None
+	 * Outputs:     CommandLineRunner — a Spring bean that runs after the context is fully loaded
+	 * Functionality: Conditionally runs db.initializeSchemaAtStartup() if the INIT_SCHEMA_ON_STARTUP
+	 *               environment variable is set to "true", "1", or "yes".
+	 * Dependencies: org.springframework.boot.CommandLineRunner, db.initializeSchemaAtStartup
+	 * Called by:   Spring Boot framework after application context startup
+	 */
 	@Bean
 	CommandLineRunner initializeSchemaOnStartup() {
 		return args -> {

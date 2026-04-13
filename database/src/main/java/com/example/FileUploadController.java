@@ -18,11 +18,20 @@ import org.springframework.web.multipart.MultipartFile;
 // mvn spring-boot:run
 @RestController
 @RequestMapping("/api")
-// @CrossOrigin(origins = "http://localhost:3000") // Switched to global cors
-// config
 public class FileUploadController {
     private static final Logger logger = Logger.getLogger(FileUploadController.class.getName());
 
+    /**
+     * Inputs:      files (MultipartFile[]) — one or more image files from the multipart request;
+     *              metadataJson (String, optional) — JSON array of per-file metadata (GPS, datetime, etc.)
+     * Outputs:     ResponseEntity<?> — 200 OK with upload results map on success;
+     *              400 Bad Request for invalid input; 500 Internal Server Error for unexpected failures
+     * Functionality: HTTP POST /api/upload handler that delegates to FileProcessor.uploadAndProcessFiles
+     *               for GCS upload, DB insertion, and live AnimalDetect inference.
+     * Dependencies: FileProcessor.uploadAndProcessFiles, org.springframework.web.multipart.MultipartFile,
+     *               org.springframework.http.ResponseEntity
+     * Called by:   HTTP clients (frontend dashboard, mobile apps, curl) via POST /api/upload
+     */
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> uploadFileInstantProcessed(
             @RequestParam("files") MultipartFile[] files,

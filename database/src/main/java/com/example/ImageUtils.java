@@ -31,6 +31,14 @@ public class ImageUtils {
 
     private static int tiffBase;
 
+    /**
+     * Inputs:      f (File) — source image file (any supported format)
+     * Outputs:     File — the original file if already JPEG; otherwise a new .jpeg file in the same directory
+     * Functionality: Converts non-JPEG images to JPEG: uses macOS `sips` for HEIC/HEIF files and
+     *               ImageIO for other formats.
+     * Dependencies: javax.imageio.ImageIO, java.lang.ProcessBuilder (sips command)
+     * Called by:   Legacy/manual tooling; not currently wired into the main upload pipeline
+     */
     public static File convertToJpg(File f) throws IOException, InterruptedException {
         String ext = getExtension(f.getName()).toLowerCase();
         if (ext.equals("jpg") || ext.equals("jpeg")) {
@@ -63,6 +71,13 @@ public class ImageUtils {
         return jpgFile;
     }
 
+    /**
+     * Inputs:      f (File) — image file on disk
+     * Outputs:     int — pixel width of the image
+     * Functionality: Reads the image fully into memory via ImageIO and returns its width.
+     * Dependencies: javax.imageio.ImageIO
+     * Called by:   db.loadMetadata
+     */
     public static int getWidth(File f) throws IOException {
         BufferedImage img = ImageIO.read(f);
         if (img == null) {
@@ -71,6 +86,13 @@ public class ImageUtils {
         return img.getWidth();
     }
 
+    /**
+     * Inputs:      f (File) — image file on disk
+     * Outputs:     int — pixel height of the image
+     * Functionality: Reads the image fully into memory via ImageIO and returns its height.
+     * Dependencies: javax.imageio.ImageIO
+     * Called by:   db.loadMetadata
+     */
     public static int getHeight(File f) throws IOException {
         BufferedImage img = ImageIO.read(f);
         if (img == null) {
@@ -79,16 +101,43 @@ public class ImageUtils {
         return img.getHeight();
     }
 
+    /**
+     * Inputs:      filename (String) — file name, possibly including a path
+     * Outputs:     String — extension without leading dot (e.g. "jpg"), or "" if none
+     * Functionality: Extracts the file extension by finding the last '.' in the filename.
+     * Dependencies: None
+     * Called by:   db.loadMetadata, FileProcessor.uploadAndProcessFiles,
+     *              FileProcessor.processAllUnprocessedWithAnimalDetect,
+     *              FileProcessor.processAllUnprocessedWithPythonInference,
+     *              FileProcessor.downloadFromCloudUri, AnimalDetectAPI.detectImageContentType,
+     *              convertToJpg, convertPngToJpg
+     */
     public static String getExtension(String filename) {
         int dot = filename.lastIndexOf('.');
         return (dot == -1) ? "" : filename.substring(dot + 1);
     }
 
+    /**
+     * Inputs:      filename (String) — file name with or without extension
+     * Outputs:     String — filename without the trailing ".ext" portion
+     * Functionality: Strips the last dot-separated extension from a filename.
+     * Dependencies: None
+     * Called by:   convertToJpg, convertPngToJpg
+     */
     private static String removeExtension(String filename) {
         int dot = filename.lastIndexOf('.');
         return (dot == -1) ? filename : filename.substring(0, dot);
     }
 
+    /**
+     * Inputs:      f (File) — PNG source file
+     * Outputs:     File — JPEG file in the same directory with EXIF data preserved
+     * Functionality: Converts a PNG to JPEG, extracts any embedded EXIF chunk from the PNG,
+     *               composites alpha onto white, and re-injects the EXIF data into the JPEG.
+     * Dependencies: javax.imageio.ImageIO, java.awt.Graphics2D, extractExifFromPng,
+     *               insertExifIntoJpeg, java.io.BufferedOutputStream
+     * Called by:   ImageUtils.main (test/manual conversion)
+     */
     public static File convertPngToJpg(File f) throws IOException {
         String ext = getExtension(f.getName()).toLowerCase();
         if (ext.equals("jpg") || ext.equals("jpeg")) {
@@ -131,6 +180,13 @@ public class ImageUtils {
         return jpgFile;
     }
 
+    /**
+     * Inputs:      pngBytes (byte[]) — raw PNG file bytes
+     * Outputs:     byte[] — raw EXIF bytes from the PNG eXIf chunk, or null if no such chunk exists
+     * Functionality: Walks the PNG chunk list to find and extract the eXIf chunk payload.
+     * Dependencies: None (manual byte parsing)
+     * Called by:   convertPngToJpg, parseExifFromPng
+     */
     private static byte[] extractExifFromPng(byte[] pngBytes) throws IOException {
         if (pngBytes.length < 8) {
             throw new IOException("Invalid PNG: too short");
@@ -170,6 +226,14 @@ public class ImageUtils {
         return null;
     }
 
+    /**
+     * Inputs:      f (File) — PNG image file
+     * Outputs:     ExifData — parsed EXIF fields (date, lat, lon, alt), or null if no EXIF chunk found
+     * Functionality: Reads the PNG file, extracts the eXIf chunk, normalizes the EXIF header,
+     *               and delegates to parseExif for field extraction.
+     * Dependencies: extractExifFromPng, ensureExifHeader, parseExif, java.nio.file.Files
+     * Called by:   db.loadMetadata
+     */
     public static ExifData parseExifFromPng(File f) throws IOException {
         byte[] pngBytes = Files.readAllBytes(f.toPath());
         byte[] exifBytes = extractExifFromPng(pngBytes);
@@ -181,6 +245,14 @@ public class ImageUtils {
         return parseExif(normalizedExif);
     }
 
+    /**
+     * Inputs:      file (String) — absolute path to a JPEG image file
+     * Outputs:     ExifData — parsed EXIF fields (date, lat, lon, alt); empty ExifData if no APP1 segment found
+     * Functionality: Reads the JPEG binary, locates the APP1 (0xFFE1) marker, extracts the EXIF segment,
+     *               and delegates to parseExif.
+     * Dependencies: java.io.RandomAccessFile, parseExif
+     * Called by:   db.loadMetadata
+     */
     public static ExifData parse(String file) throws Exception {
         try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
             if (raf.readUnsignedShort() != 0xFFD8) {
@@ -203,6 +275,14 @@ public class ImageUtils {
         }
     }
 
+    /**
+     * Inputs:      buf (byte[]) — raw EXIF APP1 segment bytes (starting with "Exif\0\0")
+     * Outputs:     ExifData — parsed EXIF fields including date, GPS coordinates, and altitude
+     * Functionality: Parses the TIFF header to determine byte order, then delegates to parseIFD
+     *               to extract date and GPS data from the IFD chain.
+     * Dependencies: parseIFD, java.nio.ByteBuffer, java.nio.ByteOrder
+     * Called by:   parse, parseExifFromPng
+     */
     public static ExifData parseExif(byte[] buf) {
         ByteBuffer bb = ByteBuffer.wrap(buf);
 
@@ -226,6 +306,16 @@ public class ImageUtils {
         return d;
     }
 
+    /**
+     * Inputs:      bb (ByteBuffer) — buffer positioned at the TIFF data;
+     *              offset (int) — absolute byte offset of IFD0;
+     *              d (ExifData) — accumulator for parsed fields
+     * Outputs:     void — populates d in place via parseExifIFD and parseGPSIFD
+     * Functionality: Reads IFD0 entries to find the Exif sub-IFD (tag 0x8769) and GPS IFD (tag 0x8825)
+     *               offsets, then dispatches to the appropriate sub-parsers.
+     * Dependencies: parseExifIFD, parseGPSIFD, java.nio.ByteBuffer
+     * Called by:   parseExif
+     */
     private static void parseIFD(ByteBuffer bb, int offset, ExifData d) {
         bb.position(offset);
         int entries = bb.getShort() & 0xFFFF;
@@ -254,6 +344,15 @@ public class ImageUtils {
         }
     }
 
+    /**
+     * Inputs:      bb (ByteBuffer) — buffer positioned at the TIFF data;
+     *              offset (int) — absolute byte offset of the Exif sub-IFD;
+     *              d (ExifData) — accumulator for parsed fields
+     * Outputs:     void — sets d.date from DateTimeOriginal tag (0x9003) if present
+     * Functionality: Scans the Exif sub-IFD for the DateTimeOriginal tag and reads the ASCII date string.
+     * Dependencies: java.nio.ByteBuffer
+     * Called by:   parseIFD
+     */
     private static void parseExifIFD(ByteBuffer bb, int offset, ExifData d) {
         bb.position(offset);
         int entries = bb.getShort() & 0xFFFF;
@@ -275,6 +374,17 @@ public class ImageUtils {
         }
     }
 
+    /**
+     * Inputs:      bb (ByteBuffer) — buffer positioned at the TIFF data;
+     *              type (int) — TIFF field type (2 = ASCII);
+     *              count (int) — number of values;
+     *              value (int) — inline value or offset to the data
+     * Outputs:     char — first character of the ASCII string, or 0 if not applicable
+     * Functionality: Reads a single ASCII character from an inline TIFF value or from an offset,
+     *               used to decode GPS reference direction tags (N/S/E/W).
+     * Dependencies: java.nio.ByteBuffer
+     * Called by:   parseGPSIFD
+     */
     private static char charRef(ByteBuffer bb, int type, int count, int value) {
         if (type != 2 || count < 1) {
             return 0;
@@ -303,6 +413,16 @@ public class ImageUtils {
         return (char) b;
     }
 
+    /**
+     * Inputs:      bb (ByteBuffer) — buffer positioned at the TIFF data;
+     *              offset (int) — absolute byte offset of the GPS IFD;
+     *              d (ExifData) — accumulator for parsed fields
+     * Outputs:     void — sets d.lat, d.lon, d.alt with sign applied from reference direction tags
+     * Functionality: Reads the GPS IFD to extract latitude, longitude, and altitude as rational triplets,
+     *               then applies N/S and E/W reference directions as sign flips.
+     * Dependencies: charRef, readRationalTriplet, readRational, java.nio.ByteBuffer
+     * Called by:   parseIFD
+     */
     private static void parseGPSIFD(ByteBuffer bb, int offset, ExifData d) {
         bb.position(offset);
         int entries = bb.getShort() & 0xFFFF;
@@ -358,6 +478,15 @@ public class ImageUtils {
         }
     }
 
+    /**
+     * Inputs:      bb (ByteBuffer) — buffer with correct byte order set;
+     *              offset (int) — absolute byte offset of three consecutive TIFF RATIONAL values
+     * Outputs:     double — decimal degrees computed as degrees + minutes/60 + seconds/3600
+     * Functionality: Reads three numerator/denominator pairs (degrees, minutes, seconds) and converts
+     *               them to a single decimal-degree value.
+     * Dependencies: java.nio.ByteBuffer
+     * Called by:   parseGPSIFD
+     */
     private static double readRationalTriplet(ByteBuffer bb, int offset) {
         bb.position(offset);
         double[] v = new double[3];
@@ -370,6 +499,14 @@ public class ImageUtils {
         return v[0] + v[1] / 60.0 + v[2] / 3600.0;
     }
 
+    /**
+     * Inputs:      bb (ByteBuffer) — buffer with correct byte order set;
+     *              offset (int) — absolute byte offset of a single TIFF RATIONAL value
+     * Outputs:     double — numerator / denominator
+     * Functionality: Reads one TIFF RATIONAL (two 4-byte unsigned integers) and returns the quotient.
+     * Dependencies: java.nio.ByteBuffer
+     * Called by:   parseGPSIFD
+     */
     private static double readRational(ByteBuffer bb, int offset) {
         bb.position(offset);
         long num = bb.getInt() & 0xFFFFFFFFL;
@@ -377,6 +514,17 @@ public class ImageUtils {
         return (double) num / den;
     }
 
+    /**
+     * Inputs:      file (File) — file to hash
+     * Outputs:     String — lowercase hex SHA-256 digest of the file contents
+     * Functionality: Streams the file through a DigestInputStream to compute the SHA-256 hash without
+     *               loading the entire file into memory.
+     * Dependencies: java.security.MessageDigest, java.security.DigestInputStream,
+     *               java.io.FileInputStream
+     * Called by:   db.loadMetadata, FileProcessor.buildMetadataForUpload,
+     *              FileProcessor.processAllUnprocessedWithAnimalDetect,
+     *              FileProcessor.processAllUnprocessedWithPythonInference
+     */
     public static String sha256(File file) throws IOException, NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
@@ -391,12 +539,26 @@ public class ImageUtils {
         return bytesToHex(hashBytes);
     }
 
+    /**
+     * Inputs:      data (byte[]) — bytes to hash
+     * Outputs:     String — lowercase hex SHA-256 digest
+     * Functionality: Computes SHA-256 of an in-memory byte array in a single digest call.
+     * Dependencies: java.security.MessageDigest
+     * Called by:   GoogleCloudStorageAPI.uploadFile(MultipartFile)
+     */
     public static String sha256(byte[] data) throws NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         byte[] hashBytes = digest.digest(data);
         return bytesToHex(hashBytes);
     }
 
+    /**
+     * Inputs:      bytes (byte[]) — raw byte array
+     * Outputs:     String — lowercase two-character-per-byte hex string
+     * Functionality: Converts a byte array to its lowercase hexadecimal string representation.
+     * Dependencies: None
+     * Called by:   sha256(File), sha256(byte[])
+     */
     private static String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) {
@@ -405,6 +567,15 @@ public class ImageUtils {
         return sb.toString();
     }
 
+    /**
+     * Inputs:      jpegBytes (byte[]) — valid JPEG bytes (must start with 0xFFD8);
+     *              exifBytes (byte[]) — raw EXIF bytes to embed (may be null)
+     * Outputs:     byte[] — JPEG bytes with the EXIF APP1 segment inserted after the SOI marker
+     * Functionality: Injects an EXIF APP1 segment into a JPEG immediately after the SOI marker,
+     *               preserving all original image data.
+     * Dependencies: ensureExifHeader
+     * Called by:   convertPngToJpg
+     */
     private static byte[] insertExifIntoJpeg(byte[] jpegBytes, byte[] exifBytes) throws IOException {
         if (exifBytes == null || exifBytes.length == 0) {
             return jpegBytes;
@@ -436,6 +607,14 @@ public class ImageUtils {
         return result;
     }
 
+    /**
+     * Inputs:      exifBytes (byte[]) — raw EXIF bytes that may or may not include the "Exif\0\0" header
+     * Outputs:     byte[] — EXIF bytes guaranteed to start with the "Exif\0\0" six-byte header
+     * Functionality: Prepends the six-byte "Exif\0\0" header if it is not already present, so that
+     *               the bytes are valid for embedding in a JPEG APP1 segment.
+     * Dependencies: None
+     * Called by:   insertExifIntoJpeg, parseExifFromPng
+     */
     private static byte[] ensureExifHeader(byte[] exifBytes) {
         if (exifBytes.length >= 6 && exifBytes[0] == 0x45 && exifBytes[1] == 0x78
                 && exifBytes[2] == 0x69 && exifBytes[3] == 0x66 && exifBytes[4] == 0x00
@@ -454,11 +633,29 @@ public class ImageUtils {
         return prefixed;
     }
 
+    /**
+     * Inputs:      buf (byte[]) — byte array containing a big-endian 32-bit integer;
+     *              offset (int) — byte offset within buf to read from
+     * Outputs:     int — big-endian 32-bit integer at the given offset
+     * Functionality: Reads four bytes from buf at offset and assembles them as a big-endian int.
+     * Dependencies: None
+     * Called by:   extractExifFromPng
+     */
     private static int readIntBE(byte[] buf, int offset) {
         return ((buf[offset] & 0xFF) << 24) | ((buf[offset + 1] & 0xFF) << 16)
                 | ((buf[offset + 2] & 0xFF) << 8) | (buf[offset + 3] & 0xFF);
     }
 
+    /**
+     * Inputs:      label (String) — display label for the comparison;
+     *              pngMeta (Metadata) — metadata extracted from the PNG version of the image;
+     *              jpgMeta (Metadata) — metadata extracted from the converted JPEG version
+     * Outputs:     void — prints a match/mismatch comparison table to stdout
+     * Functionality: Compares datetime, GPS flag, lat/lon/alt between the PNG and JPEG metadata objects
+     *               and prints a human-readable result to help verify EXIF preservation during conversion.
+     * Dependencies: parsePngMetadata
+     * Called by:   ImageUtils.main
+     */
     public static void printMetadataComparison(String label, Metadata pngMeta, Metadata jpgMeta) {
         Metadata effectivePngMeta = pngMeta;
         if (isMetadataEmpty(pngMeta)) {
@@ -484,6 +681,14 @@ public class ImageUtils {
         System.out.println("  altitude: png=" + effectivePngMeta.altitude + ", jpg=" + jpgMeta.altitude);
     }
 
+    /**
+     * Inputs:      meta (Metadata) — metadata object to inspect
+     * Outputs:     boolean — true if both datetime and GPS fields are absent/empty
+     * Functionality: Checks whether a Metadata object carries no useful EXIF data, used to decide
+     *               whether to attempt a re-parse from the original PNG file.
+     * Dependencies: None
+     * Called by:   printMetadataComparison
+     */
     private static boolean isMetadataEmpty(Metadata meta) {
         if (meta == null) {
             return true;
@@ -493,6 +698,16 @@ public class ImageUtils {
         return noDate && noGps;
     }
 
+    /**
+     * Inputs:      filename (String) — name of the PNG file to locate and parse
+     * Outputs:     Metadata — parsed EXIF metadata from the PNG file, or null if the file cannot be
+     *              found or parsed
+     * Functionality: Resolves the file by name across several known directories, extracts the EXIF
+     *               chunk, and returns a Metadata object; used as a fallback when in-memory metadata is empty.
+     * Dependencies: resolveFileByName, extractExifFromPng, ensureExifHeader, parseExif,
+     *               java.nio.file.Files
+     * Called by:   printMetadataComparison
+     */
     private static Metadata parsePngMetadata(String filename) {
         if (filename == null || filename.isEmpty()) {
             return null;
@@ -535,6 +750,14 @@ public class ImageUtils {
         }
     }
 
+    /**
+     * Inputs:      filename (String) — file name to look up (without a guaranteed path)
+     * Outputs:     File — the located File object, or null if not found in any search path
+     * Functionality: Tries to locate a file by checking: the exact path, the test resources directory,
+     *               and the main resources directory.
+     * Dependencies: java.io.File
+     * Called by:   parsePngMetadata
+     */
     private static File resolveFileByName(String filename) {
         File direct = new File(filename);
         if (direct.exists()) {
@@ -554,6 +777,14 @@ public class ImageUtils {
         return null;
     }
 
+    /**
+     * Inputs:      a (Double) — first value (may be null); b (Double) — second value (may be null);
+     *              eps (double) — maximum allowed absolute difference
+     * Outputs:     boolean — true if both are null, or if |a - b| <= eps
+     * Functionality: Null-safe floating-point equality check within a given tolerance.
+     * Dependencies: None
+     * Called by:   printMetadataComparison
+     */
     private static boolean doubleEquals(Double a, Double b, double eps) {
         if (a == null || b == null) {
             return a == null && b == null;
@@ -561,6 +792,14 @@ public class ImageUtils {
         return Math.abs(a - b) <= eps;
     }
 
+    /**
+     * Inputs:      args (String[]) — unused
+     * Outputs:     void — prints metadata comparison results to stdout
+     * Functionality: Standalone test runner that converts two test PNG images to JPEG and prints
+     *               a metadata comparison to verify that EXIF data is preserved through conversion.
+     * Dependencies: convertPngToJpg, db.loadMetadata, printMetadataComparison, java.nio.file.Files
+     * Called by:   JVM when run directly for manual testing
+     */
     public static void main(String[] args) throws Exception {
         String basePath = "src/test/java/com/example/";
         File png1 = new File(basePath + "test_image_1.png");
