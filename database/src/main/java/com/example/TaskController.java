@@ -5,8 +5,6 @@ import java.util.logging.Logger;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,35 +20,21 @@ public class TaskController {
     }
 
     /**
-     * Inputs:      None (triggered automatically by Spring after the application context is ready)
-     * Outputs:     void — runs one email polling pass on startup; logs errors but does not rethrow
-     * Functionality: Listens for the ApplicationReadyEvent and immediately triggers the Gmail polling
-     *               job so any emails received while the server was down are processed on boot.
-     * Dependencies: EventScheduler.runEmailPollingJob,
-     *               org.springframework.boot.context.event.ApplicationReadyEvent
-     * Called by:   Spring framework after ApplicationReadyEvent is published
-     */
-    @EventListener(ApplicationReadyEvent.class)
-    public void pollOnStartup() {
-        logger.info("Application started; running one email polling pass.");
-        try {
-            eventScheduler.runEmailPollingJob();
-        } catch (Exception e) {
-            logger.severe("Startup email polling failed: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Inputs:      taskTokenHeader (String, optional header X-Task-Token) — shared secret to authenticate the caller
-     * Outputs:     ResponseEntity<?> — 200 OK {"status":"ok","job":"poll-email"} on success;
-     *              503 Service Unavailable if TASK_TOKEN is not configured;
-     *              401 Unauthorized if the token does not match
-     * Functionality: HTTP POST /internal/tasks/poll-email handler that allows an external scheduler
-     *               (e.g. Google Cloud Scheduler) to trigger the Gmail polling job; protected by a
-     *               shared-secret token check.
+     * Inputs: taskTokenHeader (String, optional header X-Task-Token) — shared
+     * secret to authenticate the caller
+     * Outputs: ResponseEntity<?> — 200 OK {"status":"ok","job":"poll-email"} on
+     * success;
+     * 503 Service Unavailable if TASK_TOKEN is not configured;
+     * 401 Unauthorized if the token does not match
+     * Functionality: HTTP POST /internal/tasks/poll-email handler that allows an
+     * external scheduler
+     * (e.g. Google Cloud Scheduler) to trigger the Gmail polling job; protected by
+     * a
+     * shared-secret token check.
      * Dependencies: SecretConfig, EventScheduler.runEmailPollingJob,
-     *               org.springframework.http.ResponseEntity
-     * Called by:   External HTTP scheduler (e.g. Cloud Scheduler cron job) via POST /internal/tasks/poll-email
+     * org.springframework.http.ResponseEntity
+     * Called by: External HTTP scheduler (e.g. Cloud Scheduler cron job) via POST
+     * /internal/tasks/poll-email
      */
     @PostMapping("/internal/tasks/poll-email")
     public ResponseEntity<?> runEmailPollingTask(

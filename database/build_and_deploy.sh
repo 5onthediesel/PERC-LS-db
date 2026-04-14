@@ -89,3 +89,7 @@ gcloud run deploy "${CLOUD_RUN_SERVICE_NAME}" \
   --add-cloudsql-instances "${CLOUD_SQL_INSTANCE}" \
   --set-secrets=/secrets/app-secrets/app-secrets.json="${APP_SECRETS_SECRET_NAME}":latest,/secrets/service-account/service-account.json="${SERVICE_ACCOUNT_SECRET_NAME}":latest,/secrets/gmail-credentials/gmail-credentials.json="${GMAIL_CREDENTIALS_SECRET_NAME}":latest,/secrets/gmail-token/StoredCredential="${GMAIL_TOKEN_SECRET_NAME}":latest \
   --set-env-vars APP_SECRETS_PATH=/secrets/app-secrets/app-secrets.json,GMAIL_CREDENTIALS_PATH=/secrets/gmail-credentials/gmail-credentials.json,GMAIL_TOKEN_PATH=/secrets/gmail-token
+
+gcloud run services update-traffic perc-elk-detection-gcloud-run-service \
+  --region us-central1 \
+  --to-latest
