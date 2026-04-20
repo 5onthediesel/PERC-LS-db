@@ -19,7 +19,16 @@ import org.springframework.web.multipart.MultipartFile;
 public class MessagingController {
 
     /**
-     * Endpoint for local testing: POST /test/send-image
+     * Inputs:      file (MultipartFile) — image file to process;
+     *              phone_number (String, optional) — phone number to send the result notification to
+     * Outputs:     ResponseEntity<?> — 200 OK with status/metadata map on success;
+     *              400 Bad Request if file is missing or not an image;
+     *              500 Internal Server Error on processing failure
+     * Functionality: Local test endpoint (POST /test/send-image) that runs a single image through the
+     *               full upload pipeline and sends an SMS-style notification via Messenger.
+     * Dependencies: FileProcessor.uploadAndProcessFiles, Messenger.sendReply,
+     *               org.springframework.web.multipart.MultipartFile
+     * Called by:   HTTP clients during local development/testing via POST /test/send-image
      */
     @PostMapping("/test/send-image")
     public ResponseEntity<?> sendImageTest(
@@ -76,8 +85,18 @@ public class MessagingController {
     }
 
     /**
-     * Twilio webhook: POST /sms
-     * Twilio calls this when a landowner texts an image to the PERC number.
+     * Inputs:      fromPhone (String) — sender's phone number (Twilio "From" param);
+     *              mediaUrl (String) — URL of the attached image hosted by Twilio;
+     *              mediaContentType (String) — MIME type of the attached image
+     * Outputs:     ResponseEntity<String> — always 200 OK with TwiML "<Response></Response>"
+     *              (Twilio requires a 200 even on errors)
+     * Functionality: Twilio webhook handler (POST /sms) that downloads an MMS image from Twilio,
+     *               runs it through the pipeline (EXIF, GCS upload, DB insert), and replies to the
+     *               landowner with GPS/weather info or a duplicate notice.
+     * Dependencies: db.loadMetadata, db.connect, db.getImageByHash, db.insertMeta,
+     *               GoogleCloudStorageAPI.uploadFile, Messenger.sendReply, java.net.URI,
+     *               java.nio.file.Files
+     * Called by:   Twilio platform via POST /sms when a landowner texts a photo to the PERC number
      */
     @PostMapping("/sms")
     public ResponseEntity<String> smsWebhook(
@@ -116,7 +135,7 @@ public class MessagingController {
                 }
 
                 GoogleCloudStorageAPI.uploadFile(tempFile.toString(), objectName);
-                meta.cloud_uri = "gs://" + "cs370perc-bucket" + "/" + objectName;
+                meta.cloud_uri = "gs://" + "postgresperc-bucket" + "/" + objectName;
                 db.insertMeta(conn, meta);
             }
 
@@ -154,9 +173,22 @@ public class MessagingController {
     }
 
     /**
-     * SendGrid Inbound Parse webhook: POST /webhook/inbound-email
-     * SendGrid calls this when a landowner emails an image to submissions@perc.org.
-     * Replaces the hourly Gmail polling in EventScheduler.
+     * Inputs:      fromEmail (String) — sender's email address (SendGrid "from" param);
+     *              subject (String) — email subject line (SendGrid "subject" param);
+     *              attachments delivered as multipart fields "attachment1" … "attachment10"
+     *              in the raw HTTP request
+     * Outputs:     ResponseEntity<String> — always 200 OK with an empty body
+     *              (SendGrid requires a 200 to stop retrying)
+     * Functionality: SendGrid Inbound Parse webhook handler (POST /webhook/inbound-email) that
+     *               iterates up to 10 numbered attachment fields, runs each valid image through the
+     *               full pipeline (EXIF, GCS, DB, AnimalDetect), and logs results; skips duplicates.
+     * Dependencies: db.loadMetadata, db.connect, db.getImageByHash, db.insertMeta,
+     *               db.updateMetaWithDetection, GoogleCloudStorageAPI.uploadFile,
+     *               AnimalDetectAPI, isAllowedImageType, SecretConfig,
+     *               org.springframework.web.context.request.RequestContextHolder,
+     *               jakarta.servlet.http.HttpServletRequest
+     * Called by:   SendGrid platform via POST /webhook/inbound-email when an email is received
+     *              at the configured inbound parse address
      */
     @PostMapping("/webhook/inbound-email")
     public ResponseEntity<String> sendGridEmailWebhook(
@@ -165,12 +197,9 @@ public class MessagingController {
 
         System.out.println("[SendGrid] Inbound email from: " + fromEmail + ", subject: " + subject);
 
-        // SendGrid sends attachments as attachment1, attachment2, etc.
-        // We check up to 10 attachments
         boolean foundImage = false;
 
         for (int i = 1; i <= 10; i++) {
-            // Pull the attachment from the multipart request manually
             org.springframework.web.context.request.RequestAttributes attrs =
                     org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
             if (attrs == null) break;
@@ -208,7 +237,6 @@ public class MessagingController {
                         Metadata existing = db.getImageByHash(conn, meta.sha256);
                         if (existing != null) {
                             System.out.println("[SendGrid] Duplicate image, skipping: " + meta.sha256);
-                            // No reply needed for duplicates via email in this flow
                             continue;
                         }
 
@@ -257,6 +285,13 @@ public class MessagingController {
         return ResponseEntity.ok("");
     }
 
+    /**
+     * Inputs:      contentType (String) — MIME type string to check
+     * Outputs:     boolean — true if the content type is one of: image/jpeg, image/jpg, image/png, image/heic
+     * Functionality: Guards the SendGrid webhook from processing non-image attachments.
+     * Dependencies: None
+     * Called by:   sendGridEmailWebhook
+     */
     private boolean isAllowedImageType(String contentType) {
         return contentType.equals("image/jpeg") ||
             contentType.equals("image/jpg") ||

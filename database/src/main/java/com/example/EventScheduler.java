@@ -1,6 +1,5 @@
 package com.example;
 
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -11,26 +10,19 @@ public class EventScheduler {
      * Pulls all unprocessed images from DB, runs AnimalDetect labeling,
      * and writes elk counts back to DB.
      */
-    @Scheduled(cron = "0 0 2 * * SUN")
-    public void runWeeklyInferenceBatch() {
-        System.out.println("[Scheduler] Starting weekly inference batch...");
-        FileProcessor.BatchResult result = FileProcessor.processAllUnprocessedWithAnimalDetect();
-        System.out.println("[Scheduler] Done. attempted=" + result.attempted +
-                ", processed=" + result.processed);
-        if (!result.errors.isEmpty()) {
-            for (String error : result.errors) {
-                System.err.println("[Scheduler] Error: " + error);
-            }
-        }
-    }
+    // @Scheduled(cron = "0 0 2 * * SUN")
+    // public void runWeeklyInferenceBatch() { ... }
 
-    /*
-     * Polls Gmail inbox every hour for new image submissions from landowners.
-     * TODO: Replace with SendGrid Inbound Parse webhook when PERC provides a
-     * domain.
+    /**
+     * Inputs:      None
+     * Outputs:     void — delegates entirely to EmailProcessor.pollAndProcess
+     * Functionality: Entry point for the hourly Gmail polling job; intended to be triggered by a
+     *               Cloud Scheduler HTTP call to /internal/tasks/poll-email or on application startup.
+     * Dependencies: EmailProcessor.pollAndProcess
+     * Called by:   TaskController.pollOnStartup (on startup event),
+     *              TaskController.runEmailPollingTask (via HTTP POST /internal/tasks/poll-email)
      */
-    // @Scheduled(fixedDelay = 3600000)
-    // public void pollEmailInbox() {
-    //     EmailProcessor.pollAndProcess();
-    // }
+    public void runEmailPollingJob() {
+        EmailProcessor.pollAndProcess();
+    }
 }

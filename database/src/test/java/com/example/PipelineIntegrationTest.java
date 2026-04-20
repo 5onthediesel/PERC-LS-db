@@ -19,8 +19,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class PipelineIntegrationTest {
 
-    private static final String PROJECT_ID = "cs370perc";
-    private static final String BUCKET_NAME = "cs370perc-bucket";
+    private static final String PROJECT_ID = "postgresperc";
+    private static final String BUCKET_NAME = "postgresperc-bucket";
 
     private static final Path TEST_DIR = Paths.get("src", "test", "java", "com", "example");
     private static final Path ORIGINAL_HEIC = TEST_DIR.resolve("test_image_2.heic");
@@ -142,8 +142,8 @@ public class PipelineIntegrationTest {
 
     private static void ensureSchemaAndTable(Connection conn) throws SQLException {
         try (Statement s = conn.createStatement()) {
-            s.execute("create schema if not exists cs370");
-            s.execute("set search_path to cs370");
+            s.execute("create schema if not exists postgres");
+            s.execute("set search_path to postgres");
 
             String ddl = "create table if not exists images ("
                     + "id serial primary key, "
@@ -166,7 +166,7 @@ public class PipelineIntegrationTest {
 
     private static boolean rowExists(Connection conn, String hash) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
-                "select 1 from cs370.images where img_hash = ? limit 1")) {
+                "select 1 from postgres.images where img_hash = ? limit 1")) {
             ps.setString(1, hash);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next();
@@ -176,7 +176,7 @@ public class PipelineIntegrationTest {
 
     private static String fetchCloudUri(Connection conn, String hash) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
-                "select cloud_uri from cs370.images where img_hash = ? limit 1")) {
+                "select cloud_uri from postgres.images where img_hash = ? limit 1")) {
             ps.setString(1, hash);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? rs.getString(1) : null;
@@ -186,7 +186,7 @@ public class PipelineIntegrationTest {
 
     private static int deleteRow(Connection conn, String hash) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
-                "delete from cs370.images where img_hash = ?")) {
+                "delete from postgres.images where img_hash = ?")) {
             ps.setString(1, hash);
             return ps.executeUpdate();
         }

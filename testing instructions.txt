@@ -1,7 +1,0 @@
-install gcloud cli
-make sure local-testing-secrets.json is in "database/"
-
-run:
-gcloud auth login `ACCOUNT`
-chmod +x local_testing.sh
-./local_testing.sh
