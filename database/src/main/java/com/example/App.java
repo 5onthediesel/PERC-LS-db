@@ -12,24 +12,62 @@ public class App {
 	private static final Logger logger = Logger.getLogger(App.class.getName());
 
 	/**
-	 * Inputs:      args (String[]) — command-line arguments passed to the JVM
-	 * Outputs:     void — launches the Spring Boot application context
+	 * Inputs: args (String[]) — command-line arguments passed to the JVM
+	 * Outputs: void — launches the Spring Boot application context
 	 * Functionality: Entry point; bootstraps the entire Spring Boot application.
 	 * Dependencies: org.springframework.boot.SpringApplication
-	 * Called by:   JVM on startup
+	 * Called by: JVM on startup
 	 */
 	public static void main(String[] args) {
 		SpringApplication.run(App.class, args);
 	}
 
 	/**
-	 * Inputs:      None
-	 * Outputs:     CommandLineRunner — a Spring bean that runs after the context is fully loaded
-	 * Functionality: Conditionally runs db.initializeSchemaAtStartup() if the INIT_SCHEMA_ON_STARTUP
-	 *               environment variable is set to "true", "1", or "yes".
-	 * Dependencies: org.springframework.boot.CommandLineRunner, db.initializeSchemaAtStartup
-	 * Called by:   Spring Boot framework after application context startup
+	 * Inputs: None
+	 * Outputs: CommandLineRunner — a Spring bean that runs after the context is
+	 * fully loaded
+	 * Functionality: Conditionally runs db.initializeSchemaAtStartup() if the
+	 * INIT_SCHEMA_ON_STARTUP
+	 * environment variable is set to "true", "1", or "yes".
+	 * Dependencies: org.springframework.boot.CommandLineRunner,
+	 * db.initializeSchemaAtStartup
+	 * Called by: Spring Boot framework after application context startup
 	 */
+	/**
+	 * Inputs: None
+	 * Outputs: CommandLineRunner — a Spring bean that runs after the context is
+	 * fully loaded
+	 * Functionality: Conditionally runs EmailProcessor.pollAndProcess() on startup
+	 * if the
+	 * POLL_EMAIL_ON_STARTUP environment variable is set to "true", "1", or "yes".
+	 * Intended for local development/testing only; not set in production.
+	 * Dependencies: org.springframework.boot.CommandLineRunner,
+	 * EmailProcessor.pollAndProcess
+	 * Called by: Spring Boot framework after application context startup
+	 */
+	@Bean
+	CommandLineRunner pollEmailOnStartup() {
+		return args -> {
+			String flag = System.getenv("POLL_EMAIL_ON_STARTUP");
+			boolean shouldPoll = flag != null && ("true".equals(flag.toLowerCase(Locale.ROOT))
+					|| "1".equals(flag)
+					|| "yes".equals(flag.toLowerCase(Locale.ROOT)));
+
+			if (!shouldPoll) {
+				logger.info("Skipping startup email poll (set POLL_EMAIL_ON_STARTUP=true to enable).");
+				return;
+			}
+
+			logger.info("Running startup email poll because POLL_EMAIL_ON_STARTUP is enabled.");
+			try {
+				EmailProcessor.pollAndProcess();
+			} catch (Exception e) {
+				logger.severe("Startup email poll failed; continuing: " + e.getMessage());
+				logger.log(java.util.logging.Level.FINE, "Startup email poll stack trace", e);
+			}
+		};
+	}
+
 	@Bean
 	CommandLineRunner initializeSchemaOnStartup() {
 		return args -> {

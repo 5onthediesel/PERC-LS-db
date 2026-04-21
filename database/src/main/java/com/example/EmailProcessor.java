@@ -46,9 +46,11 @@ public class EmailProcessor {
      * Inputs: None (reads GMAIL_CREDENTIALS_PATH and GMAIL_TOKEN_PATH from
      * SecretConfig)
      * Outputs: Gmail — authorized Gmail API client
-     * Functionality: Builds an OAuth2-authorized Gmail service client, opening a
-     * local browser for
-     * first-run authorization and caching the token for subsequent runs.
+     * Functionality: Builds an OAuth2-authorized Gmail service client using a
+     * stored
+     * refresh token. On first run, opens a local browser for authorization and
+     * caches
+     * the token. On subsequent runs, uses the cached token which auto-refreshes.
      * Dependencies: com.google.api.services.gmail.Gmail,
      * GoogleAuthorizationCodeFlow,
      * GoogleNetHttpTransport, FileDataStoreFactory, LocalServerReceiver,
@@ -95,8 +97,8 @@ public class EmailProcessor {
      * Functionality: Resolves the runtime token datastore location. Prefers the
      * configured
      * directory when it is writable, but automatically falls back to a writable
-     * /tmp directory when the configured path points at a read-only Cloud Run
-     * secret mount or another non-writable location.
+     * /tmp
+     * directory when the configured path points at a read-only location.
      * Dependencies: isDirectoryWritable, prepareFallbackTokenStore
      * Called by: buildGmailService
      */
@@ -111,8 +113,6 @@ public class EmailProcessor {
             throw new IOException("Invalid GMAIL_TOKEN_PATH: " + tokenPath);
         }
 
-        // Cloud Run secret mounts are read-only; canWrite() may be unreliable, so force
-        // /tmp.
         if (configuredTokenDir.getAbsolutePath().startsWith("/secrets/")) {
             return prepareFallbackTokenStore(tokenPathFile, configuredTokenDir);
         }
@@ -249,22 +249,18 @@ public class EmailProcessor {
                     List<MessagePart> imageParts = new ArrayList<>();
                     collectImageAttachmentParts(message.getPayload(), imageParts, voiceGoogleSender);
                     if (imageParts.isEmpty()) {
-                        if (!voiceGoogleSender) {
-                            sendReply(gmail, user, replyTarget, subject,
-                                    "Hi! We received your email but couldn't find a valid photo attachment. " +
-                                            "Please attach a JPG, PNG, or HEIC photo and try again.");
-                        }
+                        sendReply(gmail, user, replyTarget, subject,
+                                "Hi! We received your email but couldn't find a valid photo attachment. " +
+                                        "Please attach a JPG, PNG, or HEIC photo and try again.");
                         markAsRead(gmail, user, messageSummary.getId());
                         continue;
                     }
 
                     if (imageParts.size() > MAX_FILES_PER_EMAIL) {
-                        if (!voiceGoogleSender) {
-                            sendReply(gmail, user, replyTarget, subject,
-                                    "Your email includes too many image attachments. "
-                                            + "Please send no more than 10 images per email, "
-                                            + "with each image under 10MB.");
-                        }
+                        sendReply(gmail, user, replyTarget, subject,
+                                "Your email includes too many image attachments. "
+                                        + "Please send no more than 10 images per email, "
+                                        + "with each image under 10MB.");
                         markAsRead(gmail, user, messageSummary.getId());
                         continue;
                     }
@@ -272,7 +268,7 @@ public class EmailProcessor {
                     int processedImages = 0;
                     int duplicateImages = 0;
                     int failedImages = 0;
-                    boolean skipReply = voiceGoogleSender;
+                    boolean skipReply = false;
                     List<String> allImageStatusLines = new ArrayList<>();
 
                     for (MessagePart part : imageParts) {
@@ -387,33 +383,39 @@ public class EmailProcessor {
                     }
 
                     if (!skipReply) {
-                        StringBuilder replyBuilder = new StringBuilder();
-                        if (processedImages > 0 && duplicateImages == 0 && failedImages == 0) {
-                            replyBuilder.append("Thanks! Your photo(s) have been received and logged. ");
-                        } else if (processedImages > 0) {
-                            replyBuilder.append("Thanks! We received your email and processed ")
-                                    .append(processedImages)
-                                    .append(" photo(s). ")
-                                    .append(duplicateImages > 0 ? "Some attachments were already in the database. "
-                                            : "")
-                                    .append(failedImages > 0 ? "Some attachments could not be processed. " : "");
-                        } else if (duplicateImages > 0) {
-                            replyBuilder.append("It looks like we've already received the photo(s) in this email. ")
-                                    .append("They're already in the PERC database.");
+                        String replyBody;
+                        if (voiceGoogleSender) {
+                            replyBody = "Thanks! Your photo(s) have been received and logged.";
                         } else {
-                            replyBuilder
-                                    .append("Hi! We received your email but couldn't process any photo attachments. ")
-                                    .append("Please try sending JPG, PNG, or HEIC images.");
-                        }
-
-                        if (!allImageStatusLines.isEmpty()) {
-                            replyBuilder.append("\n\nImages:\n");
-                            for (String line : allImageStatusLines) {
-                                replyBuilder.append(line).append("\n");
+                            StringBuilder replyBuilder = new StringBuilder();
+                            if (processedImages > 0 && duplicateImages == 0 && failedImages == 0) {
+                                replyBuilder.append("Thanks! Your photo(s) have been received and logged. ");
+                            } else if (processedImages > 0) {
+                                replyBuilder.append("Thanks! We received your email and processed ")
+                                        .append(processedImages)
+                                        .append(" photo(s). ")
+                                        .append(duplicateImages > 0 ? "Some attachments were already in the database. "
+                                                : "")
+                                        .append(failedImages > 0 ? "Some attachments could not be processed. " : "");
+                            } else if (duplicateImages > 0) {
+                                replyBuilder.append("It looks like we've already received the photo(s) in this email. ")
+                                        .append("They're already in the PERC database.");
+                            } else {
+                                replyBuilder
+                                        .append("Hi! We received your email but couldn't process any photo attachments. ")
+                                        .append("Please try sending JPG, PNG, or HEIC images.");
                             }
+
+                            if (!allImageStatusLines.isEmpty()) {
+                                replyBuilder.append("\n\nImages:\n");
+                                for (String line : allImageStatusLines) {
+                                    replyBuilder.append(line).append("\n");
+                                }
+                            }
+                            replyBody = replyBuilder.toString();
                         }
 
-                        sendReply(gmail, user, replyTarget, subject, replyBuilder.toString());
+                        sendReply(gmail, user, replyTarget, subject, replyBody);
                     }
 
                     // Mark as read regardless of outcome

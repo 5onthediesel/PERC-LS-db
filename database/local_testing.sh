@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Local testing script with relative secret paths
 export APP_SECRETS_PATH="./secrets/local_testing_secrets.json"
+export POLL_EMAIL_ON_STARTUP=true
 
 # Verify local secrets file exists
 if [[ ! -f "${APP_SECRETS_PATH}" ]]; then
