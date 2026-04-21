@@ -1,13 +1,26 @@
 package com.example;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
+import java.util.Properties;
+
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp;
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
+import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.http.HttpResponseException;
-import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.gmail.Gmail;
@@ -16,16 +29,6 @@ import com.google.api.services.gmail.model.ListMessagesResponse;
 import com.google.api.services.gmail.model.Message;
 import com.google.api.services.gmail.model.MessagePart;
 import com.google.api.services.gmail.model.MessagePartHeader;
-
-import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
 
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
@@ -288,12 +291,24 @@ public class EmailProcessor {
                             continue;
                         }
 
-                        // Download attachment
-                        var attachment = gmail.users().messages().attachments()
-                                .get(user, messageSummary.getId(), attachmentId)
-                                .execute();
-
-                        byte[] imageBytes = Base64.getUrlDecoder().decode(attachment.getData());
+                        // Download attachment — real attachments use the API; Google Voice
+                        // inline parts have their bytes already in part.getBody().getData().
+                        byte[] imageBytes;
+                        if (attachmentId != null) {
+                            var attachment = gmail.users().messages().attachments()
+                                    .get(user, messageSummary.getId(), attachmentId)
+                                    .execute();
+                            imageBytes = Base64.getUrlDecoder().decode(attachment.getData());
+                        } else {
+                            // Inline part: bytes are embedded directly in the message body
+                            String inlineData = part.getBody().getData();
+                            if (inlineData == null || inlineData.isEmpty()) {
+                                failedImages++;
+                                allImageStatusLines.add(attachmentDisplayName + ": skipped (no image data).");
+                                continue;
+                            }
+                            imageBytes = Base64.getUrlDecoder().decode(inlineData);
+                        }
 
                         // Write to temp file
                         String ext = mimeType.contains("png") ? ".png" : mimeType.contains("heic") ? ".heic" : ".jpg";
@@ -637,7 +652,8 @@ public class EmailProcessor {
      * Outputs: void — populates imageParts in place
      * Functionality: Recursively walks the MIME tree of a Gmail message, collecting
      * leaf parts whose
-     * MIME type is an allowed image type and that have an attachment ID.
+     * MIME type is an allowed image type and that have either an attachment ID
+     * (standard email) or inline getData() bytes (Google Voice MMS forwards).
      * Dependencies: com.google.api.services.gmail.model.MessagePart,
      * isAllowedMimeType
      * Called by: pollAndProcess
@@ -661,11 +677,21 @@ public class EmailProcessor {
             return;
         }
 
-        if (attachmentsOnly && (part.getBody() == null || part.getBody().getAttachmentId() == null)) {
+        if (part.getBody() == null) {
             return;
         }
 
-        if (part.getBody() != null && part.getBody().getAttachmentId() != null) {
+        boolean hasAttachmentId = part.getBody().getAttachmentId() != null;
+        boolean hasInlineData = part.getBody().getData() != null && !part.getBody().getData().isEmpty();
+
+        // For non-Voice senders (attachmentsOnly=true), require a real attachmentId.
+        // For Voice senders (attachmentsOnly=false), also accept inline parts where
+        // the image bytes live in getData() rather than behind an attachmentId.
+        if (attachmentsOnly && !hasAttachmentId) {
+            return;
+        }
+
+        if (hasAttachmentId || hasInlineData) {
             imageParts.add(part);
         }
     }
