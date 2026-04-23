@@ -49,23 +49,29 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      apiKey (String) — AnimalDetect API key
-     * Outputs:     AnimalDetectAPI instance with DEFAULT_TIMEOUT (60s)
-     * Functionality: Convenience constructor that delegates to the two-arg constructor with a default timeout.
+     * Inputs: apiKey (String) — AnimalDetect API key
+     * Outputs: AnimalDetectAPI instance with DEFAULT_TIMEOUT (60s)
+     * Functionality: Convenience constructor that delegates to the two-arg
+     * constructor with a default timeout.
      * Dependencies: None
-     * Called by:   FileProcessor.uploadAndProcessFiles, FileProcessor.processAllUnprocessedWithAnimalDetect,
-     *              EmailProcessor.pollAndProcess, MessagingController.sendGridEmailWebhook
+     * Called by: FileProcessor.uploadAndProcessFiles,
+     * FileProcessor.processAllUnprocessedWithAnimalDetect,
+     * EmailProcessor.pollAndProcess, MessagingController.sendGridEmailWebhook
      */
     public AnimalDetectAPI(String apiKey) {
         this(apiKey, DEFAULT_TIMEOUT);
     }
 
     /**
-     * Inputs:      apiKey (String) — AnimalDetect API key; timeout (int) — HTTP timeout in seconds
-     * Outputs:     Fully initialized AnimalDetectAPI instance
-     * Functionality: Initializes the HTTP client and JSON object mapper used for all API calls.
-     * Dependencies: java.net.http.HttpClient, com.fasterxml.jackson.databind.ObjectMapper
-     * Called by:   AnimalDetectAPI(String) single-arg constructor; callers that need a custom timeout
+     * Inputs: apiKey (String) — AnimalDetect API key; timeout (int) — HTTP timeout
+     * in seconds
+     * Outputs: Fully initialized AnimalDetectAPI instance
+     * Functionality: Initializes the HTTP client and JSON object mapper used for
+     * all API calls.
+     * Dependencies: java.net.http.HttpClient,
+     * com.fasterxml.jackson.databind.ObjectMapper
+     * Called by: AnimalDetectAPI(String) single-arg constructor; callers that need
+     * a custom timeout
      */
     public AnimalDetectAPI(String apiKey, int timeout) {
         this.apiKey = apiKey;
@@ -75,14 +81,17 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      imageBytes (byte[]) — raw image data; filename (String) — original file name;
-     *              country (String) — country code for detection context (e.g. "USA");
-     *              threshold (double) — minimum confidence score to include a detection
-     * Outputs:     Map<String, Object> — parsed JSON response from the AnimalDetect API
-     * Functionality: Sends the image to the AnimalDetect REST API as a multipart/form-data POST and returns the parsed response.
-     * Dependencies: java.net.http.HttpClient, java.net.http.HttpRequest/HttpResponse,
-     *               com.fasterxml.jackson.databind.ObjectMapper
-     * Called by:   callAnimalDetectAPIWithFallback (retry loop)
+     * Inputs: imageBytes (byte[]) — raw image data; filename (String) — original
+     * file name;
+     * country (String) — country code for detection context (e.g. "USA");
+     * threshold (double) — minimum confidence score to include a detection
+     * Outputs: Map<String, Object> — parsed JSON response from the AnimalDetect API
+     * Functionality: Sends the image to the AnimalDetect REST API as a
+     * multipart/form-data POST and returns the parsed response.
+     * Dependencies: java.net.http.HttpClient,
+     * java.net.http.HttpRequest/HttpResponse,
+     * com.fasterxml.jackson.databind.ObjectMapper
+     * Called by: callAnimalDetectAPIWithFallback (retry loop)
      */
     public Map<String, Object> callAnimalDetectAPI(
             byte[] imageBytes,
@@ -144,14 +153,18 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      imageBytes (byte[]) — raw image data; filename (String) — original file name;
-     *              country (String) — country code; threshold (double) — confidence threshold
-     * Outputs:     Map<String, Object> — parsed API response after successful call
-     * Functionality: Enforces a payload size limit before calling the API, then retries with
-     *               progressively smaller/lower-quality JPEG compressions on HTTP 413 errors.
-     * Dependencies: compressImageForUpload, prepareImageForPayloadLimit, callAnimalDetectAPI
-     * Called by:   FileProcessor.uploadAndProcessFiles, FileProcessor.processAllUnprocessedWithAnimalDetect,
-     *              EmailProcessor.pollAndProcess, MessagingController.sendGridEmailWebhook
+     * Inputs: imageBytes (byte[]) — raw image data; filename (String) — original
+     * file name;
+     * country (String) — country code; threshold (double) — confidence threshold
+     * Outputs: Map<String, Object> — parsed API response after successful call
+     * Functionality: Enforces a payload size limit before calling the API, then
+     * retries with
+     * progressively smaller/lower-quality JPEG compressions on HTTP 413 errors.
+     * Dependencies: compressImageForUpload, prepareImageForPayloadLimit,
+     * callAnimalDetectAPI
+     * Called by: FileProcessor.uploadAndProcessFiles,
+     * FileProcessor.processAllUnprocessedWithAnimalDetect,
+     * EmailProcessor.pollAndProcess, MessagingController.sendGridEmailWebhook
      */
     public Map<String, Object> callAnimalDetectAPIWithFallback(
             byte[] imageBytes,
@@ -207,14 +220,18 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      imageBytes (byte[]) — raw image data; filename (String) — used for format hints;
-     *              maxSide (int) — maximum pixel length for the longest side after resizing;
-     *              quality (int) — JPEG compression quality (1–100)
-     * Outputs:     byte[] — JPEG-encoded bytes of the resized/compressed image
-     * Functionality: Decodes, optionally downscales, converts to RGB, and JPEG-encodes the image to
-     *               reduce its byte size for upload.
-     * Dependencies: javax.imageio.ImageIO, java.awt.image.BufferedImage, java.awt.Graphics2D
-     * Called by:   callAnimalDetectAPIWithFallback (retry steps), prepareImageForPayloadLimit
+     * Inputs: imageBytes (byte[]) — raw image data; filename (String) — used for
+     * format hints;
+     * maxSide (int) — maximum pixel length for the longest side after resizing;
+     * quality (int) — JPEG compression quality (1–100)
+     * Outputs: byte[] — JPEG-encoded bytes of the resized/compressed image
+     * Functionality: Decodes, optionally downscales, converts to RGB, and
+     * JPEG-encodes the image to
+     * reduce its byte size for upload.
+     * Dependencies: javax.imageio.ImageIO, java.awt.image.BufferedImage,
+     * java.awt.Graphics2D
+     * Called by: callAnimalDetectAPIWithFallback (retry steps),
+     * prepareImageForPayloadLimit
      */
     public byte[] compressImageForUpload(byte[] imageBytes, String filename, int maxSide, int quality)
             throws Exception {
@@ -270,13 +287,17 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      imageBytes (byte[]) — raw image data; maxSide (int) — target maximum side length
-     * Outputs:     BufferedImage — decoded image, sub-sampled if source is larger than maxSide
-     * Functionality: Uses an ImageReader with sub-sampling to decode only enough pixel data needed
-     *               for the target size, avoiding full allocation of very large images.
-     * Dependencies: javax.imageio.ImageIO, javax.imageio.ImageReader, javax.imageio.ImageReadParam,
-     *               javax.imageio.stream.ImageInputStream
-     * Called by:   compressImageForUpload
+     * Inputs: imageBytes (byte[]) — raw image data; maxSide (int) — target maximum
+     * side length
+     * Outputs: BufferedImage — decoded image, sub-sampled if source is larger than
+     * maxSide
+     * Functionality: Uses an ImageReader with sub-sampling to decode only enough
+     * pixel data needed
+     * for the target size, avoiding full allocation of very large images.
+     * Dependencies: javax.imageio.ImageIO, javax.imageio.ImageReader,
+     * javax.imageio.ImageReadParam,
+     * javax.imageio.stream.ImageInputStream
+     * Called by: compressImageForUpload
      */
     private BufferedImage readScaledImageForCompression(byte[] imageBytes, int maxSide) throws IOException {
         try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(imageBytes))) {
@@ -310,12 +331,16 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      imageBytes (byte[]) — raw image data; filename (String) — original file name
-     * Outputs:     PreparedUploadImage — wrapper containing (possibly compressed) bytes and a safe filename
-     * Functionality: Returns the image as-is if under the payload limit; otherwise estimates a target
-     *               scale and compresses the image to fit within PRACTICAL_RAW_LIMIT_BYTES.
-     * Dependencies: compressImageForUpload, readImageDimensions, toCompressedFilename
-     * Called by:   callAnimalDetectAPIWithFallback
+     * Inputs: imageBytes (byte[]) — raw image data; filename (String) — original
+     * file name
+     * Outputs: PreparedUploadImage — wrapper containing (possibly compressed) bytes
+     * and a safe filename
+     * Functionality: Returns the image as-is if under the payload limit; otherwise
+     * estimates a target
+     * scale and compresses the image to fit within PRACTICAL_RAW_LIMIT_BYTES.
+     * Dependencies: compressImageForUpload, readImageDimensions,
+     * toCompressedFilename
+     * Called by: callAnimalDetectAPIWithFallback
      */
     private PreparedUploadImage prepareImageForPayloadLimit(byte[] imageBytes, String filename) throws Exception {
         if (imageBytes == null || imageBytes.length == 0) {
@@ -363,11 +388,14 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      imageBytes (byte[]) — raw image data
-     * Outputs:     int[] — two-element array [width, height]; defaults to [1920, 1080] if unreadable
-     * Functionality: Reads only the image header to extract dimensions without decoding the full pixel buffer.
-     * Dependencies: javax.imageio.ImageIO, javax.imageio.ImageReader, javax.imageio.stream.ImageInputStream
-     * Called by:   prepareImageForPayloadLimit
+     * Inputs: imageBytes (byte[]) — raw image data
+     * Outputs: int[] — two-element array [width, height]; defaults to [1920, 1080]
+     * if unreadable
+     * Functionality: Reads only the image header to extract dimensions without
+     * decoding the full pixel buffer.
+     * Dependencies: javax.imageio.ImageIO, javax.imageio.ImageReader,
+     * javax.imageio.stream.ImageInputStream
+     * Called by: prepareImageForPayloadLimit
      */
     private int[] readImageDimensions(byte[] imageBytes) throws IOException {
         try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(imageBytes))) {
@@ -386,11 +414,12 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      filename (String) — original file name (may be null or blank)
-     * Outputs:     String — new filename with "_compressed.jpeg" suffix
-     * Functionality: Strips the original extension and appends "_compressed.jpeg" to produce a storage-safe name.
+     * Inputs: filename (String) — original file name (may be null or blank)
+     * Outputs: String — new filename with "_compressed.jpeg" suffix
+     * Functionality: Strips the original extension and appends "_compressed.jpeg"
+     * to produce a storage-safe name.
      * Dependencies: None
-     * Called by:   prepareImageForPayloadLimit, callAnimalDetectAPIWithFallback
+     * Called by: prepareImageForPayloadLimit, callAnimalDetectAPIWithFallback
      */
     private String toCompressedFilename(String filename) {
         String baseName = (filename == null || filename.isBlank()) ? "upload"
@@ -399,12 +428,13 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      img (BufferedImage) — source image, any color model
-     * Outputs:     BufferedImage — image guaranteed to be TYPE_INT_RGB
-     * Functionality: Redraws the image onto a fresh RGB canvas to strip alpha channels or unusual color spaces
-     *               before JPEG encoding.
+     * Inputs: img (BufferedImage) — source image, any color model
+     * Outputs: BufferedImage — image guaranteed to be TYPE_INT_RGB
+     * Functionality: Redraws the image onto a fresh RGB canvas to strip alpha
+     * channels or unusual color spaces
+     * before JPEG encoding.
      * Dependencies: java.awt.image.BufferedImage, java.awt.Graphics2D
-     * Called by:   compressImageForUpload
+     * Called by: compressImageForUpload
      */
     private BufferedImage convertToRGB(BufferedImage img) {
         if (img == null) {
@@ -427,11 +457,13 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      exc (Exception) — exception thrown by an API call
-     * Outputs:     boolean — true if the error indicates the payload was too large (HTTP 413)
-     * Functionality: Checks the exception message for HTTP 413 or a known cloud-function payload error string.
+     * Inputs: exc (Exception) — exception thrown by an API call
+     * Outputs: boolean — true if the error indicates the payload was too large
+     * (HTTP 413)
+     * Functionality: Checks the exception message for HTTP 413 or a known
+     * cloud-function payload error string.
      * Dependencies: None
-     * Called by:   callAnimalDetectAPIWithFallback
+     * Called by: callAnimalDetectAPIWithFallback
      */
     private boolean isPayloadTooLargeError(Exception exc) {
         String msg = exc.toString();
@@ -439,11 +471,13 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      filename (String) — file name whose extension determines the MIME type
-     * Outputs:     String — MIME type string (e.g. "image/jpeg", "image/png")
-     * Functionality: Maps common image file extensions to their corresponding MIME types, defaulting to "image/jpeg".
+     * Inputs: filename (String) — file name whose extension determines the MIME
+     * type
+     * Outputs: String — MIME type string (e.g. "image/jpeg", "image/png")
+     * Functionality: Maps common image file extensions to their corresponding MIME
+     * types, defaulting to "image/jpeg".
      * Dependencies: None
-     * Called by:   callAnimalDetectAPI
+     * Called by: callAnimalDetectAPI
      */
     private String detectImageContentType(String filename) {
         String lower = filename.toLowerCase(Locale.ROOT);
@@ -466,12 +500,15 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      payload (Map<String, Object>) — parsed API JSON response
-     * Outputs:     List<Map<String, Object>> — list of detection objects; empty list if none found
-     * Functionality: Searches common API response field names (annotations, detections, results, predictions, data)
-     *               to extract the list of animal detections regardless of the exact response schema.
+     * Inputs: payload (Map<String, Object>) — parsed API JSON response
+     * Outputs: List<Map<String, Object>> — list of detection objects; empty list if
+     * none found
+     * Functionality: Searches common API response field names (annotations,
+     * detections, results, predictions, data)
+     * to extract the list of animal detections regardless of the exact response
+     * schema.
      * Dependencies: None
-     * Called by:   countElkFromResponse, formatDetectionsForConsole
+     * Called by: countElkFromResponse, formatDetectionsForConsole
      */
     private List<Map<String, Object>> extractDetections(Map<String, Object> payload) {
         Object[] candidates = {
@@ -525,12 +562,16 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      det (Map<String, Object>) — a single detection object from the API response
-     * Outputs:     String — the most specific taxonomy label available, lowercased; empty string if none found
-     * Functionality: Walks the taxonomy hierarchy (species → genus → family → order → class) then
-     *               falls back to top-level label fields to return the best available animal name.
+     * Inputs: det (Map<String, Object>) — a single detection object from the API
+     * response
+     * Outputs: String — the most specific taxonomy label available, lowercased;
+     * empty string if none found
+     * Functionality: Walks the taxonomy hierarchy (species → genus → family → order
+     * → class) then
+     * falls back to top-level label fields to return the best available animal
+     * name.
      * Dependencies: None
-     * Called by:   countElkFromResponse, formatDetectionsForConsole
+     * Called by: countElkFromResponse, formatDetectionsForConsole
      */
     private String getDetectionLabel(Map<String, Object> det) {
         Map<String, Object> taxonomy = (Map<String, Object>) det.get("taxonomy");
@@ -553,12 +594,15 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      det (Map<String, Object>) — a single detection object from the API response
-     * Outputs:     Double — confidence score in [0,1] range, or null if no score field is present
-     * Functionality: Checks common confidence field names (confidence, score, probability) and returns
-     *               the first numeric value found.
+     * Inputs: det (Map<String, Object>) — a single detection object from the API
+     * response
+     * Outputs: Double — confidence score in [0,1] range, or null if no score field
+     * is present
+     * Functionality: Checks common confidence field names (confidence, score,
+     * probability) and returns
+     * the first numeric value found.
      * Dependencies: None
-     * Called by:   countElkFromResponse, formatDetectionsForConsole
+     * Called by: countElkFromResponse, formatDetectionsForConsole
      */
     private Double getDetectionScore(Map<String, Object> det) {
         for (String key : new String[] { "confidence", "score", "probability" }) {
@@ -570,19 +614,22 @@ public class AnimalDetectAPI {
         return null;
     }
 
-    /**
-     * Inputs:      payload (Map<String, Object>) — parsed API response; threshold (double) — minimum confidence score
-     * Outputs:     int — number of elk detections at or above the confidence threshold
-     * Functionality: Filters detections to those labelled as elk/wapiti/cervus canadensis with a confidence
-     *               score meeting the threshold, and returns the total count.
+     /**
+      * Inputs: payload (Map<String, Object>) — parsed API response; threshold
+      * (double) — minimum confidence score
+      * Outputs: int — number of elk detections at or above the confidence threshold
+      * Functionality: Filters detections to those labelled as elk/wapiti/cervus
+      * canadensis/cervus elaphus with a numeric confidence score meeting the
+      * threshold, and returns the total count.
      * Dependencies: extractDetections, getDetectionLabel, getDetectionScore
-     * Called by:   FileProcessor.uploadAndProcessFiles, FileProcessor.processAllUnprocessedWithAnimalDetect,
-     *              EmailProcessor.pollAndProcess, MessagingController.sendGridEmailWebhook
+     * Called by: FileProcessor.uploadAndProcessFiles,
+     * FileProcessor.processAllUnprocessedWithAnimalDetect,
+     * EmailProcessor.pollAndProcess, MessagingController.sendGridEmailWebhook
      */
     public int countElkFromResponse(Map<String, Object> payload, double threshold) {
         List<Map<String, Object>> detections = extractDetections(payload);
         int elkCount = 0;
-        String[] elkMarkers = { "elk", "wapiti", "cervus canadensis" };
+        String[] elkMarkers = { "elk", "wapiti", "cervus canadensis", "cervus elaphus" };
 
         for (Map<String, Object> det : detections) {
             String label = getDetectionLabel(det);
@@ -620,7 +667,7 @@ public class AnimalDetectAPI {
 
             // Check score threshold
             Double score = getDetectionScore(det);
-            if (score == null || score >= threshold) {
+            if (score != null && score >= threshold) {
                 elkCount++;
             }
         }
@@ -629,12 +676,15 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      payload (Map<String, Object>) — parsed API response
-     * Outputs:     List<String> — human-readable lines, one per detection, e.g. "prediction 0: elk (confidence=87.3%)"
-     * Functionality: Formats every detection in the API response as a labeled confidence string for console logging.
+     * Inputs: payload (Map<String, Object>) — parsed API response
+     * Outputs: List<String> — human-readable lines, one per detection, e.g.
+     * "prediction 0: elk (confidence=87.3%)"
+     * Functionality: Formats every detection in the API response as a labeled
+     * confidence string for console logging.
      * Dependencies: extractDetections, getDetectionLabel, getDetectionScore
-     * Called by:   FileProcessor.uploadAndProcessFiles, FileProcessor.processAllUnprocessedWithAnimalDetect,
-     *              EmailProcessor.pollAndProcess
+     * Called by: FileProcessor.uploadAndProcessFiles,
+     * FileProcessor.processAllUnprocessedWithAnimalDetect,
+     * EmailProcessor.pollAndProcess
      */
     public List<String> formatDetectionsForConsole(Map<String, Object> payload) {
         List<Map<String, Object>> detections = extractDetections(payload);
@@ -661,13 +711,15 @@ public class AnimalDetectAPI {
     }
 
     /**
-     * Inputs:      cliKey (String) — API key passed via CLI argument (may be null)
-     * Outputs:     String — resolved, non-blank API key
-     * Functionality: Returns the first non-blank key found across three sources in priority order:
-     *               CLI argument → ANIMALDETECT_API_KEY env var → SecretConfig JSON file.
+     * Inputs: cliKey (String) — API key passed via CLI argument (may be null)
+     * Outputs: String — resolved, non-blank API key
+     * Functionality: Returns the first non-blank key found across three sources in
+     * priority order:
+     * CLI argument → ANIMALDETECT_API_KEY env var → SecretConfig JSON file.
      * Dependencies: SecretConfig
-     * Called by:   FileProcessor.uploadAndProcessFiles, FileProcessor.processAllUnprocessedWithAnimalDetect,
-     *              EmailProcessor.pollAndProcess, MessagingController.sendGridEmailWebhook
+     * Called by: FileProcessor.uploadAndProcessFiles,
+     * FileProcessor.processAllUnprocessedWithAnimalDetect,
+     * EmailProcessor.pollAndProcess, MessagingController.sendGridEmailWebhook
      */
     public static String resolveApiKey(String cliKey) throws Exception {
         if (cliKey != null && !cliKey.trim().isEmpty()) {

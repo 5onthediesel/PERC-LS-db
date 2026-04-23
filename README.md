@@ -219,7 +219,7 @@ HTTP client for the AnimalDetect wildlife detection API. Handles image upload, a
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Inputs**        | `payload` (Map<String, Object>) — parsed API response; `threshold` (double) — minimum confidence score                                                                    |
 | **Outputs**       | `int` — number of elk detections at or above the confidence threshold                                                                                                     |
-| **Functionality** | Filters detections to those labelled as elk/wapiti/cervus canadensis with a confidence score meeting the threshold, and returns the total count.                          |
+| **Functionality** | Filters detections to those labelled as elk/wapiti/cervus canadensis/cervus elaphus with a numeric confidence score meeting the threshold, and returns the total count. |
 | **Dependencies**  | `extractDetections`, `getDetectionLabel`, `getDetectionScore`                                                                                                             |
 | **Called by**     | `FileProcessor.uploadAndProcessFiles`, `FileProcessor.processAllUnprocessedWithAnimalDetect`, `EmailProcessor.pollAndProcess`, `MessagingController.sendGridEmailWebhook` |
 
