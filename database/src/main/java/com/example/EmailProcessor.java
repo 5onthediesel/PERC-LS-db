@@ -385,9 +385,7 @@ public class EmailProcessor {
                                         + (meta.elk_count != null ? meta.elk_count : "unknown"));
                             }
 
-                            String elkStatus = meta.elk_count != null
-                                    ? meta.elk_count + " elk found!"
-                                    : "0 elk found";
+                            String elkStatus = formatElkCount(meta.elk_count) + " elk";
                             allImageStatusLines.add(meta.filename + ": " + elkStatus);
                             processedImages++;
                             processed++;
@@ -400,7 +398,7 @@ public class EmailProcessor {
                     if (!skipReply) {
                         String replyBody;
                         if (voiceGoogleSender) {
-                            replyBody = "Thanks! Your photo(s) have been received and logged.";
+                            replyBody = buildVoiceReplyBody(allImageStatusLines);
                         } else {
                             StringBuilder replyBuilder = new StringBuilder();
                             if (processedImages > 0 && duplicateImages == 0 && failedImages == 0) {
@@ -518,6 +516,38 @@ public class EmailProcessor {
         } catch (Exception e) {
             logDetailedException("Failed to send reply to " + toEmail, e);
         }
+    }
+
+    /**
+     * Inputs: allImageStatusLines (List<String>) -- per-image status summaries
+     * Outputs: String -- single-line Google Voice reply body
+     * Functionality: Formats a response that keeps every image summary on one
+     * line so the SMS relay does not truncate the message at line breaks.
+     * Dependencies: None
+     * Called by: pollAndProcess
+     */
+    private static String buildVoiceReplyBody(List<String> allImageStatusLines) {
+        StringBuilder replyBuilder = new StringBuilder("Thanks! Your photo(s) have been received and logged.");
+
+        if (!allImageStatusLines.isEmpty()) {
+            boolean firstStatus = true;
+            for (String statusLine : allImageStatusLines) {
+                if (statusLine == null || statusLine.isBlank()) {
+                    continue;
+                }
+
+                if (firstStatus) {
+                    replyBuilder.append(" Images: ");
+                    firstStatus = false;
+                } else {
+                    replyBuilder.append(" | ");
+                }
+
+                replyBuilder.append(statusLine.replace("\n", " ").replace("\r", " "));
+            }
+        }
+
+        return replyBuilder.toString();
     }
 
     /**
