@@ -1,0 +1,31 @@
+# Reduce Cloud Build source upload size and protect local-only files.
+
+.gcloudignore
+.git
+.gitignore
+.github
+.DS_Store
+.idea
+.vscode
+
+# Build outputs
+
+/target
+
+# Local dependencies/cache
+
+node_modules
+.mvn
+
+# Local secrets should never be uploaded in build context
+
+/secrets
+
+# Docs and notes not needed to build image
+
+_.md
+_.txt
+
+# Test sources and fixtures are not needed in deployment image builds
+
+src/test/
